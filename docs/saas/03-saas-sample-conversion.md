@@ -130,7 +130,8 @@ Insert both schools and one student each. The domain is the host the browser wil
 ```text
 127.0.0.1 sgs.localhost sss.localhost
 ```
-connect to psql ```psql saraswati_sample``` 
+
+connect to psql `psql saraswati_sample` 
 
 ```sql
 INSERT INTO platform.tenants (tenant_id, slug, status, isolation, config)
@@ -203,7 +204,7 @@ Open `http://sgs.localhost:3000`.
 | `sgs.student@example.com` on `http://sgs.localhost:3000`                                  | Valid.                                                                                                        |
 | `sgs.student@example.com` on `http://sss.localhost:3000`                                  | Not found.                                                                                                    |
 | `sss.student@example.com` on `http://sss.localhost:3000`                                  | Valid.                                                                                                        |
-| `rg tenant_id app/api/auth/check-email`                                                   | No match. The route still selects `table` and `emailColumn` only.                                             |
+| `rg tenant_id app/api/auth/check-email`                                                   | No match. The route still selects `table` and `emailColumn` only. ##Ignore this.                              |
 
 
 Both students are in `saraswati_sample`. The host chooses which row the same query returns.
