@@ -84,7 +84,7 @@ These rules are the whole design. A change that breaks one of them is not done.
 4. **The browser cannot choose the tenant.** Ignore `tenant_id` in a body, query string, or header sent by the browser. The host is the source. A JWT may carry `tenant_id`, and it must equal the host's tenant or the request is HTTP 403.
 5. **The API is on the same host as the page.** Keep `NEXT_PUBLIC_API_BASE_URL` and the dashboard URLs relative (`/api`, `/api/student`, `/api/v1`, `/student`, `/faculty`, ...). A shared API hostname such as `api.swais.in` would see the wrong `Host` and pick the wrong school.
 6. **Public config is branding only.** School name, colors, and logo URL are JSON. Database URLs and bucket secrets are not in that JSON.
-7. **New S3 keys start with `{tenant_id}/`.** One bucket. Presign a key only after it was read from a row this request is allowed to see.
+7. **Every S3 key starts with `{tenant_id}/`.** One bucket. The module that owns an existing object copies it under that prefix and rewrites the column that stores the key before its reader is switched. Presign a key only after it was read from a row this request is allowed to see.
 
 ## Step 1 — Shared kit
 
@@ -103,6 +103,7 @@ npm install "github:SarafWorldsphere/saraswati-tenant-kit#v1"
 from saraswati_tenant import (
     SchoolMiddleware,
     apply_rls,
+    s3_path_validator,
     build_key,
     current_school,
     open_school_session,
@@ -118,7 +119,7 @@ from saraswati_tenant import (
 
 `apply_rls(db)` is the same `set_config` call for a SQLAlchemy session, used inside the existing `get_db` helpers.
 
-`build_key("brand", "logo")` returns `{tenant_id}/brand/logo`.
+`build_key("brand", "logo")` returns `{tenant_id}/brand/logo`. `s3_path_validator(key, tenant_id)` accepts that key only when it starts with `{tenant_id}/`. There is no allowlist of older prefixes.
 
 `SchoolMiddleware` is the single layer. `get_db` and `get_connection` call `open_school_session()` or `apply_rls()`. They do not parse the host.
 
@@ -273,38 +274,207 @@ Headmaster routes in `sss-hm-dashboard` currently have no JWT check (`useAuthGua
 
 Admin `GET /api/admin/config` in `sss-admin-backend/app/routers/admin.py` currently returns only `logout_url`. Extend that response with the public `SchoolConfig`, or stop using it and call `GET /public/tenant-config` from the admin shell. One of the two, not a third shape.
 
-## Step 6 — S3 keys
+## Step 6 — Move the live S3 objects, then write tenant-prefixed keys
 
-One private bucket. Every new key:
+Only SGS is live. The private bucket is `sgs-bucket-images` in `ap-south-2`. Copy each object under the SGS tenant id and rewrite the column that stores the key in the same change that switches the writer. Deploy that change before any reader calls `s3_path_validator`. The kit accepts a key only when it starts with `{tenant_id}/`. Do not add an exception for the old prefixes in the kit or in a presign function.
+
+`build_key` is the only key builder. Delete the local builders after the copy. The school id is the first segment. The rest of the path stays the path the module already uses.
+
+```python
+build_key("study-material", f"class-{class_id}", f"subject-{subject_id}", f"chapter-{chapter_id}", filename)
+build_key("assignments", f"class-{class_id}", f"assignment-{assignment_id}", filename)
+build_key("student-photos", filename)
+build_key("chapters", f"class-{class_id}", f"subject-{subject_id}", f"chapter-{chapter_id}", filename)
+build_key("admin", "students", str(student_id), "student", filename)
+build_key("admin", "parents", str(parent_id), "profile", filename)
+build_key("brand", "logo")
+```
+
+### What is in `sgs-bucket-images` today
+
+The console listing at the bucket root is three folders and loose parent photos. There is no `chapters/` folder and no `sss/` folder in that listing.
 
 ```text
-{tenant_id}/study-material/class-{id}/subject-{id}/chapter-{id}/{file}
-{tenant_id}/assignments/class-{id}/assignment-{id}/{file}
-{tenant_id}/chapters/class-{id}/subject-{id}/chapter-{id}/{file}
+sgs-bucket-images/
+  assignments/
+    class-18/
+      assignment-117/
+        {file}
+  study-material/
+    class-7/
+      subject-29/
+        chapter-245/
+          3f90d62e47a5-Chapter_01.pdf
+  student-photos/
+    1784796691389-tki6ot.jpeg
+    1784796691695-3pnchd.jpeg
+    1784797463040-np0owg.jpeg
+    1784797463558-f479ld.jpeg
+    1784805326080-2anowb.jpeg
+    1784805326349-ju1ak8.jpeg
+    _keytest-1785480752037.txt
+  father-1784747197741-images-(1).jpeg
+  father-1784788578513-images-(1).jpeg
+  mother-1784747198406-images-(2).jpeg
+  mother-1784788578927-images-(2).jpeg
+```
+
+List the bucket again before you copy. The filenames above are the objects visible on 16 October 2026. The folder shape is what you match. A newer file under the same folders moves the same way.
+
+| Prefix in the bucket | Shape | Example |
+| --- | --- | --- |
+| `study-material/` | `study-material/class-{class_id}/subject-{subject_id}/chapter-{chapter_id}/{file}` | `study-material/class-7/subject-29/chapter-245/3f90d62e47a5-Chapter_01.pdf` |
+| `assignments/` | `assignments/class-{class_id}/assignment-{assignment_id}/{file}` | `assignments/class-18/assignment-117/{file}` |
+| `student-photos/` | `student-photos/{epoch}-{token}.jpeg` | `student-photos/1784796691389-tki6ot.jpeg` |
+| bucket root | `father-{epoch}-images-(1).jpeg` and `mother-{epoch}-images-(2).jpeg` | `father-1784747197741-images-(1).jpeg` |
+
+`student-photos/_keytest-1785480752037.txt` is a probe. Delete it after you confirm no column stores that key. Do not copy it under the tenant prefix.
+
+Two writers exist in code and have no folder in this listing. Move an object of that shape only when a column still points at it:
+
+| Writer | Key the code writes today | Where |
+| --- | --- | --- |
+| Admin photo upload | `sss/admin/students/{student_id}/student/{uuid}{ext}` and `sss/admin/parents/{parent_id}/profile/{uuid}{ext}` | `sss-admin-dashboard/sss-admin-backend/app/routers/admin.py` |
+| Chapter PDF upload, frozen app | `chapters/class-{class_id}/subject-{subject_id}/chapter-{chapter_id}/{file}` | `sss_student/backend/main.py` |
+
+### Target layout
+
+Every object, including a file that sits at the bucket root today, starts with the SGS tenant uuid. Prepend `{tenant_id}/` and keep the rest of the key. The one exception is a key that still begins with `sss/admin/`: drop the `sss/` slug, because the tenant id replaces the school name.
+
+```text
+{tenant_id}/study-material/class-{class_id}/subject-{subject_id}/chapter-{chapter_id}/{file}
+{tenant_id}/assignments/class-{class_id}/assignment-{assignment_id}/{file}
+{tenant_id}/student-photos/{file}
+{tenant_id}/father-{epoch}-images-(1).jpeg
+{tenant_id}/mother-{epoch}-images-(2).jpeg
+{tenant_id}/chapters/class-{class_id}/subject-{subject_id}/chapter-{chapter_id}/{file}
 {tenant_id}/admin/students/{student_id}/student/{file}
 {tenant_id}/admin/parents/{parent_id}/profile/{file}
 {tenant_id}/brand/logo
 {tenant_id}/brand/favicon
 ```
 
-Put the builder in the Python kit and delete the local ones.
+Worked examples for objects that are in the bucket now:
 
-| Current builder | File | Change |
-| --- | --- | --- |
-| Faculty study material and assignments | `sgs-faculty-backend/app/services/s3_service.py` `build_key`, `build_assignment_key` | Prefix with `current_school().tenant_id`. Keep the rest of the path. |
-| Admin photos | `sss-admin-backend/app/routers/admin.py` (keys start with `sss/admin/students/` and `sss/admin/parents/`) | Replace the `sss/admin` prefix with `{tenant_id}/admin`. |
-| Student chapter PDF, once ported | `sss_student/backend/main.py` writes `chapters/class-...` | Use the shared builder. Do not copy the unprefixed key. |
-| Student assignment files stored as `bytea` | `sgs-student-module/backend/main.py` `submitted_file_content` | Leave existing bytes in Postgres. New submissions use the shared builder and store an `s3://` URI, the way faculty files already do in `sgs_file_storage_metadata.file_url`. |
+```text
+study-material/class-7/subject-29/chapter-245/3f90d62e47a5-Chapter_01.pdf
+  → {tenant_id}/study-material/class-7/subject-29/chapter-245/3f90d62e47a5-Chapter_01.pdf
 
-`presign_get` stays. The bucket stays private. Rules for the presign function:
+assignments/class-18/assignment-117/{file}
+  → {tenant_id}/assignments/class-18/assignment-117/{file}
 
-- The key comes from a column just read in this request (`file_url`, `student_photo_key`, ...), never from the browser.
-- A new key must start with `{tenant_id}/`. Reject anything else.
-- A legacy key (`study-material/...`, `assignments/...`, `sss/admin/...`, `chapters/...`) may be presigned only when it was loaded from a row RLS already allowed. Schedule a copy to the new prefix later; do not block the conversion on that copy.
+student-photos/1784796691389-tki6ot.jpeg
+  → {tenant_id}/student-photos/1784796691389-tki6ot.jpeg
+
+father-1784747197741-images-(1).jpeg
+  → {tenant_id}/father-1784747197741-images-(1).jpeg
+```
+
+A stored URI gains the same segment after the bucket name:
+
+```text
+s3://sgs-bucket-images/study-material/class-7/subject-29/chapter-245/3f90d62e47a5-Chapter_01.pdf
+  → s3://sgs-bucket-images/{tenant_id}/study-material/class-7/subject-29/chapter-245/3f90d62e47a5-Chapter_01.pdf
+```
+
+### Who moves which objects
+
+Do the copy in the repository in the **Change this** column. The frozen repository is the place to read the old writer. Do not add the copy script there.
+
+| Module | Owns these objects | Column that stores the key | Change this |
+| --- | --- | --- | --- |
+| Faculty | `study-material/...` and `assignments/...` | `sgs_file_storage_metadata.file_url`, an `s3://sgs-bucket-images/{key}` URI. `entity_type` is `CHAPTER_STUDY_MATERIAL` or `ASSIGNMENT_ATTACHMENT`. | `sgs-faculty-backend`. Delete `build_key` and `build_assignment_key` in `app/services/s3_service.py`. |
+| Admin | `student-photos/...`, root `father-` and `mother-` jpegs, and any `sss/admin/...` key a row still stores | `sss_student_master.student_photo_key` and `sss_parent_master.profile_image`. After the rename those columns are `student_master.student_photo_key` and `parent_master.profile_image`. They store the key, not an `s3://` URI. | `sss-admin-dashboard`. The upload in `sss-admin-backend/app/routers/admin.py` writes `sss/admin/...` today. |
+| Student | `chapters/...` if a row already points at one. The SGS listing has none. | `sss_chapter_content.pdf_url` (`chapter_content.pdf_url` after the rename), an `s3://` URI. | `sgs-student-module`, when you port `POST /chapter-pdf` from `sss_student/backend/main.py`. |
+| Student submissions | No S3 object. The file bytes are in Postgres. | `submitted_file_content` in `sgs-student-module/backend/main.py`. | Leave the bytes. New submissions use `build_key("assignments", ...)` and store an `s3://` URI in the same shape faculty already uses. |
+| Parent | None. It presigns the faculty row. | Reads `sgs_file_storage_metadata.file_url`. `student_submission.file_path` is text the parent app stores for a submission; if that value is an S3 key, prepend the tenant id in the same pass. | `sgs-parent-module/backend/s3_utils.py`. Call `s3_path_validator` on the key you just read. |
+| Login / brand | No object yet. | `platform.tenants.config`: `logoUrl` is the path `/public/brand/logo`, not an S3 URI. | This repo, plus the upload in [02-school-provisioning.md](./02-school-provisioning.md). |
+
+### How each module copies
+
+Set `TENANT_ID` to the SGS uuid from `platform.tenants`. Set `BUCKET=sgs-bucket-images`. Copy first, rewrite the column second, read the file through the app third, delete the old object last. A reader that already requires `{tenant_id}/` will 404 until the column is rewritten, so ship the copy and the column update together.
+
+Faculty, for one study-material object. Repeat for every key under `study-material/` and `assignments/`:
+
+```bash
+OLD=study-material/class-7/subject-29/chapter-245/3f90d62e47a5-Chapter_01.pdf
+aws s3 cp "s3://${BUCKET}/${OLD}" "s3://${BUCKET}/${TENANT_ID}/${OLD}"
+```
+
+Then, inside `set_config('app.tenant_id', :tenant_id, true)`:
+
+```sql
+UPDATE file_storage_metadata
+SET file_url = replace(
+        file_url,
+        's3://sgs-bucket-images/',
+        's3://sgs-bucket-images/' || :tenant_id || '/'
+    )
+WHERE file_url LIKE 's3://sgs-bucket-images/%'
+  AND file_url NOT LIKE 's3://sgs-bucket-images/' || :tenant_id || '/%';
+```
+
+Open the chapter in the faculty app and confirm the presigned link loads. Then:
+
+```bash
+aws s3 rm "s3://${BUCKET}/${OLD}"
+```
+
+Admin, for the photos that are actually in the bucket. `student_photo_key` and `profile_image` are bare keys, so the column gains `{tenant_id}/` at the front and the object is copied to that key.
+
+```bash
+OLD=student-photos/1784796691389-tki6ot.jpeg
+aws s3 cp "s3://${BUCKET}/${OLD}" "s3://${BUCKET}/${TENANT_ID}/${OLD}"
+
+OLD=father-1784747197741-images-(1).jpeg
+aws s3 cp "s3://${BUCKET}/${OLD}" "s3://${BUCKET}/${TENANT_ID}/${OLD}"
+```
+
+```sql
+UPDATE student_master
+SET student_photo_key = :tenant_id || '/' || student_photo_key
+WHERE student_photo_key IS NOT NULL
+  AND student_photo_key NOT LIKE :tenant_id || '/%'
+  AND student_photo_key NOT LIKE 'sss/admin/%';
+
+UPDATE parent_master
+SET profile_image = :tenant_id || '/' || profile_image
+WHERE profile_image IS NOT NULL
+  AND profile_image NOT LIKE :tenant_id || '/%'
+  AND profile_image NOT LIKE 'sss/admin/%';
+```
+
+When a row stores the current admin writer (`sss/admin/students/18/student/abc.jpeg`), copy it without the `sss/` segment and set the column to the new key:
+
+```bash
+OLD=sss/admin/students/18/student/abc.jpeg
+NEW=${TENANT_ID}/admin/students/18/student/abc.jpeg
+aws s3 cp "s3://${BUCKET}/${OLD}" "s3://${BUCKET}/${NEW}"
+```
+
+```sql
+UPDATE student_master
+SET student_photo_key = :tenant_id || '/' || substr(student_photo_key, 5)
+WHERE student_photo_key LIKE 'sss/admin/%';
+
+UPDATE parent_master
+SET profile_image = :tenant_id || '/' || substr(profile_image, 5)
+WHERE profile_image LIKE 'sss/admin/%';
+```
+
+`substr(..., 5)` drops the four characters `sss/`, so `sss/admin/students/...` becomes `{tenant_id}/admin/students/...`. New uploads in `admin.py` call `build_key("admin", "students", ...)` or `build_key("admin", "parents", ...)`. They do not write `sss/admin`, `student-photos/`, or a file at the bucket root. Those shapes remain only as the copied objects above.
+
+Student chapter PDFs, only if `pdf_url` points at an unprefixed `chapters/` key. The same `aws s3 cp` prepends `{tenant_id}/`. Update `chapter_content.pdf_url` with the same `replace` as `file_url`. The ported `POST /chapter-pdf` calls `build_key("chapters", f"class-{class_id}", f"subject-{subject_id}", f"chapter-{chapter_id}", filename)` on the first upload.
+
+### Presign
+
+`presign_get` stays. The bucket stays private.
+
+- The key comes from a column just read in this request (`file_url`, `pdf_url`, `student_photo_key`, `profile_image`), never from the browser.
+- Call `s3_path_validator(key, current_school().tenant_id)` before `generate_presigned_url`. An unprefixed key raises `TenantKeyError`.
+- Faculty and student clients already send the file to the API, and the API calls `put_object`. Keep it that way. Do not hand the browser a bucket credential.
 
 Brand images are not stored as expiring URLs inside `config`. `config.logoUrl` is the path `/public/brand/logo`. That route calls `resolve_school`, then presigns `{tenant_id}/brand/logo`, and redirects. The JSON can be cached. The presign cannot.
-
-Faculty and student clients already send the file to the API and the API calls `put_object`. Keep it that way. Do not hand the browser a bucket credential.
 
 ## Step 7 — Render the school from JSON
 
@@ -353,7 +523,7 @@ Add these before calling the conversion done. They are the acceptance tests.
 4. Insert with an explicit `tenant_id` of the other school. The trigger rejects it.
 5. A faculty JWT from school A, sent to school B's host, returns 403.
 6. `GET /public/tenant-config` with `Host: sss.swais.in` returns "Shiva Satya Sai School". The body has no `database_secret` and no connection string.
-7. Upload a chapter file. The key starts with the tenant uuid. A presign request that passes a key in the body is rejected.
+7. Upload a chapter file. The key starts with the tenant uuid. A presign request that passes a key in the body is rejected. An existing `study-material/`, `assignments/`, `student-photos/`, or root `father-` / `mother-` object has been copied under `{tenant_id}/`, and the column that pointed at it stores the new key.
 8. Render the login page with a fixture config whose `schoolName` is `"Example School"`. The HTML contains that name and does not contain "SGS Senior Secondary School" or "SSS SCHOOL".
 9. For a database-isolated school, the same student request hits that school's database and still sets `app.tenant_id` there.
 
@@ -366,7 +536,7 @@ Do it in this order. Later steps assume the earlier ones.
 3. `platform` tables, and the two tenant rows for `sgs` and `sss` (provisioning runbook, first-school section).
 4. Rename tables to the names in `saraswati-tenant-kit/src/`, copy SGS and SSS rows in with `tenant_id` set inside `set_config`, which the policy from `migrations/0001_row_level_security.sql` already enforces.
 5. Switch the six connection helpers and add the middleware.
-6. S3 prefix on new uploads, brand route, delete hardcoded names.
+6. Copy the live `sgs-bucket-images` objects under `{tenant_id}/`, rewrite the columns that store those keys, switch writers to `build_key`, then add the brand route and delete hardcoded names.
 7. Acceptance tests above.
 8. Provision an empty third school with no code change. That is the test that onboarding works. The steps are in [02-school-provisioning.md](./02-school-provisioning.md).
 
@@ -377,3 +547,4 @@ Do it in this order. Later steps assume the earlier ones.
 - A developer can search school queries for a hand-written `tenant_id` filter and find none. The policy and the trigger are the only enforcement.
 - `sgs_` and `sss_` are not used as the way to separate schools. They are gone from table names, or they exist only as temporary compatibility views with a deletion date.
 - A new school is a row in `platform.tenants`, a domain row, a logo object, and a DNS record.
+- Every object in `sgs-bucket-images` that a column still points at starts with `{tenant_id}/`. `s3_path_validator` accepts only that shape.
