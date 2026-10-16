@@ -1,27 +1,30 @@
 // lib/db.ts - Shared database connection pool
 
-import { Pool } from 'pg';
+import { headers } from "next/headers";
+import { Pool, PoolClient } from "pg";
+
+const TENANT_HEADER = "x-saraswati-tenant-id";
 
 let pool: Pool | null = null;
 
 // Get or create the shared pool
 export function getPool(): Pool {
   if (!pool) {
-    // Read from env, but override if it accidentally reads the local 'postgres' user
-    const dbUser = process.env.PGUSER === 'postgres' ? 'swais_app_user' : process.env.PGUSER;
+    const host = process.env.PGHOST;
+    const user = process.env.PGUSER;
+    const password = process.env.PGPASSWORD;
+    const database = process.env.PGDATABASE;
+    if (!host || !user || !password || !database) {
+      throw new Error("PGHOST, PGUSER, PGPASSWORD, and PGDATABASE are required.");
+    }
 
     pool = new Pool({
-      host: process.env.PGHOST || 'swais-db-test-env.cri2kcc26kxg.ap-south-2.rds.amazonaws.com',
-      user: dbUser || 'swais_app_user',
-      password: process.env.PGPASSWORD || 'Swaisuser007',
-      database: process.env.PGDATABASE || 'sgs_prod',
+      host,
+      user,
+      password,
+      database,
       port: parseInt(process.env.PGPORT || '5432'),
-      // RDS requires SSL in every environment. Gating this on NODE_ENV broke
-      // local dev: `next dev` forces NODE_ENV=development regardless of .env,
-      // so the pool connected in plaintext and RDS refused it with
-      // "no pg_hba.conf entry ... no encryption". The other two pools
-      // (user-role-check.ts, student-access.ts) already connect unconditionally.
-      ssl: process.env.PGHOST === 'localhost' ? false : { rejectUnauthorized: false },
+      ssl: host === 'localhost' ? false : { rejectUnauthorized: false },
       max: 20, // Maximum connections in the pool
       idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
       connectionTimeoutMillis: 5000, // Timeout increased to 5 seconds for remote RDS
@@ -56,35 +59,39 @@ export async function closePool(): Promise<void> {
   }
 }
 
-// Helper function to get a client from the pool with automatic release
-export async function withClient<T>(
-  callback: (client: any) => Promise<T>
-): Promise<T> {
-  const pool = getPool();
-  const client = await pool.connect();
+async function bindTenant(client: PoolClient): Promise<void> {
+  const tenantId = (await headers()).get(TENANT_HEADER);
+  if (!tenantId) throw new Error("School was not resolved for this request.");
+  await client.query("BEGIN");
+  await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+}
+
+export async function withClient<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
   try {
-    return await callback(client);
+    await bindTenant(client);
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
-    try {
-      client.release();
-    } catch (releaseError) {
-      // Ignore errors when releasing - connection may already be closed
-      console.log('Client already released or connection closed');
-    }
+    client.release();
   }
 }
 
-// Helper function to execute a query with automatic connection management
-export async function query(text: string, params?: any[]): Promise<any> {
-  const pool = getPool();
-  const client = await pool.connect();
+export async function query(text: string, params?: unknown[]) {
+  const client = await getPool().connect();
   try {
-    return await client.query(text, params);
+    await bindTenant(client);
+    const result = await client.query(text, params);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
-    try {
-      client.release();
-    } catch (releaseError) {
-      // Ignore errors when releasing
-    }
+    client.release();
   }
 }

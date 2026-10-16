@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
+import { SchoolBrand } from "@saraswati/tenant-kit";
 import { getDashboardUrl, getAllRoles } from '@/lib/role-mapping';
 
 // Disable prerendering for login page
@@ -355,14 +356,7 @@ export default function Home() {
         {/* Brand / campus side */}
         <section className="hero" aria-label="SGS Portal">
           <div className="hero-inner">
-            <div className="crest-chip">
-              <img src="/assets/sgs-logo.png" alt="SGS logo" />
-            </div>
-            <h1>SGS Senior Secondary School</h1>
-            <div className="hero-loc">
-              <span aria-hidden="true" />
-              <strong>SHREERAMNAGAR</strong>
-            </div>
+            <SchoolBrand />
             <p className="hero-tag">
               Your all-in-one AI-powered school portal for students, teachers,
               parents, and administration.

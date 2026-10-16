@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@saraswati/tenant-kit": "github:SarafWorldsphere/saraswati-tenant-kit#main",
     "next": "16.2.3",
     "next-auth": "5.0.0-beta.30",
     "pg": "8.20.0",

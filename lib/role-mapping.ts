@@ -22,28 +22,28 @@ const dashboardUrls = {
 // Role to table and column mapping
 const ROLE_MAPPING: Record<string, RoleMapping> = {
   "School Admin": {
-    table: "sgs_users_masters",
+    table: "users_masters",
     emailColumn: "email_id",
     phoneColumn: "mobile_no",
     nameColumn: "full_name",
     dashboardUrl: dashboardUrls.schoolAdmin
   },
   "Headmaster": {
-    table: "sgs_users_masters",
+    table: "users_masters",
     emailColumn: "email_id",
     phoneColumn: "mobile_no",
     nameColumn: "full_name",
     dashboardUrl: dashboardUrls.headmaster
   },
   "Faculty": {
-    table: "sgs_teacher_master",
+    table: "teacher_master",
     emailColumn: "email_id",
     phoneColumn: "phone",
     nameColumn: "full_name",
     dashboardUrl: dashboardUrls.faculty
   },
   "Student": {
-    table: "sgs_student_master",
+    table: "student_master",
     emailColumn: "student_email",
     phoneColumn: "student_phone",
     nameColumn: "full_name",
@@ -54,7 +54,7 @@ const ROLE_MAPPING: Record<string, RoleMapping> = {
   // email in sgs_student_master, which meant a "parent" login resolved to a
   // student_id and the parent dashboard had no way to know who the parent was.
   "Parent": {
-    table: "sgs_parent_master",
+    table: "parent_master",
     emailColumn: "email",
     phoneColumn: "phone",
     nameColumn: "full_name",

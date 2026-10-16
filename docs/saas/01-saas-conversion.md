@@ -90,11 +90,21 @@ These rules are the whole design. A change that breaks one of them is not done.
 
 The shared kit is [saraswati-tenant-kit](https://github.com/SarafWorldsphere/saraswati-tenant-kit). Every app depends on it. Do not copy the files into each app.
 
-Install from git so you do not need a package registry yet:
+Install from git so you do not need a package registry yet. Use SSH when this machine already has a GitHub key. Use HTTPS when you sign in with `gh auth login`.
+
+SSH:
 
 ```bash
-pip install "git+https://github.com/SarafWorldsphere/saraswati-tenant-kit.git@v1#subdirectory=python"
-npm install "github:SarafWorldsphere/saraswati-tenant-kit#v1"
+pip install "git+ssh://git@github.com/SarafWorldsphere/saraswati-tenant-kit.git@main#subdirectory=python"
+npm install "github:SarafWorldsphere/saraswati-tenant-kit#main"
+```
+
+HTTPS, after `gh auth login`:
+
+```bash
+gh auth login
+pip install "git+https://github.com/SarafWorldsphere/saraswati-tenant-kit.git@main#subdirectory=python"
+npm install "git+https://github.com/SarafWorldsphere/saraswati-tenant-kit.git#main"
 ```
 
 ### Python package `saraswati_tenant`
@@ -256,13 +266,112 @@ Replace the body of the existing helper. Do not open a second engine in a router
 | Headmaster API | `sss-hm-dashboard/backend/app/database.py` | `get_db` |
 | Admin API | `sss-admin-dashboard/sss-admin-backend/app/db.py` | `get_db` |
 
-`withClient` today returns a pooled client and the caller runs SQL. After the change it still does that, and the first statement on the client is `SELECT set_config('app.tenant_id', $1, true)`. Take the id from `current_school()`, which the Next.js middleware set from the host.
+### Same two calls in every module
+
+Each module does these two things and writes no other tenant logic. The first call reads `Host`. The second call sets `app.tenant_id` on the connection the module already opens. A page, a router, and a SQL string do not read `Host`.
+
+A FastAPI module (faculty, student, parent, headmaster, admin) adds the middleware in `main.py` and calls one helper inside the `get_db` or `get_connection` it already has. `SchoolMiddleware` is the `Host` read. `apply_rls` is the SQLAlchemy form. `open_school_session` is the raw-connection form. Use the one that matches the file in the table.
+
+```python
+from fastapi import FastAPI
+from saraswati_tenant import SchoolMiddleware, apply_rls, open_school_session
+
+app = FastAPI()
+app.add_middleware(SchoolMiddleware)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        apply_rls(db)
+        yield db
+    finally:
+        db.close()
+
+def get_connection():
+    with open_school_session() as connection:
+        yield connection
+```
+
+A Next.js module has no `SchoolMiddleware` in the JavaScript package, so the same two calls are three files. `lib/school.ts` is the only lookup. `proxy.ts` is the only `Host` read. `lib/db.ts` sets `app.tenant_id` and does not read `Host`.
+
+`proxy.ts` deletes `x-saraswati-tenant-id` before it sets the id it just resolved. A value sent by the browser does not survive that delete. `lib/db.ts` reads the header the proxy set. `set_config(..., true)` is transaction-local, so the helper opens a transaction, sets the id, runs the caller's SQL, then commits.
+
+```typescript
+// lib/school.ts
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.SARASWATI_DATABASE_URL });
+
+export type ResolvedSchool = { tenantId: string; status: string };
+
+export async function resolveSchool(host: string): Promise<ResolvedSchool | null> {
+  const domain = host.trim().toLowerCase().replace(/\.$/, "").split(":")[0];
+  if (!domain || domain.includes("/")) return null;
+  const result = await pool.query(
+    `SELECT t.tenant_id::text AS "tenantId", t.status
+     FROM platform.tenant_domains AS d
+     JOIN platform.tenants AS t ON t.tenant_id = d.tenant_id
+     WHERE d.domain = $1`,
+    [domain],
+  );
+  return result.rows[0] ?? null;
+}
+```
+
+```typescript
+// proxy.ts
+import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { resolveSchool } from "@/lib/school";
+
+const TENANT_HEADER = "x-saraswati-tenant-id";
+
+export const proxy = auth(async (request) => {
+  const school = await resolveSchool(request.headers.get("host") ?? "");
+  if (!school) return new NextResponse(null, { status: 404 });
+  if (school.status !== "active") return new NextResponse(null, { status: 403 });
+  const headers = new Headers(request.headers);
+  headers.delete(TENANT_HEADER);
+  headers.set(TENANT_HEADER, school.tenantId);
+  return NextResponse.next({ request: { headers } });
+});
+```
+
+```typescript
+// lib/db.ts — withClient and query both use bindTenant
+import { headers } from "next/headers";
+import { Pool, PoolClient } from "pg";
+
+const TENANT_HEADER = "x-saraswati-tenant-id";
+
+async function bindTenant(client: PoolClient): Promise<void> {
+  const tenantId = (await headers()).get(TENANT_HEADER);
+  if (!tenantId) throw new Error("School was not resolved for this request.");
+  await client.query("BEGIN");
+  await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+}
+
+export async function withClient<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await bindTenant(client);
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+```
 
 While you are in `lib/db.ts`, delete the fallback host, user, password, and database name inside `getPool()`. A missing environment variable must fail the process. Those fallbacks include a live database password. Rotate that password, because it is already in git history. Do not move the password into the tenant config JSON.
 
 Also delete the default database URL `mydb_sgs` in `sgs-parent-module/backend/database.py`. The school is no longer implied by the database name.
 
-Add `SchoolMiddleware` in each FastAPI `main.py`. Add the same host resolution in this repo's Next.js middleware (there is no `middleware.ts` yet; add one) so login pages and `/public/tenant-config` see the school.
+The FastAPI block above is the `main.py` and the connection helper for the five Python apps. Branch `saas` in this repo already contains the Next.js block: `lib/school.ts`, `proxy.ts`, `lib/db.ts`, the role-table rename, `GET /public/tenant-config`, and `SchoolBrand` on the login page. The block stays here so another Next.js app can copy that shape.
 
 Login queries in `lib/role-mapping.ts` keep their table and column names. After the rename they point at `users_masters`, `teacher_master`, `student_master`, and `parent_master`. RLS limits the lookup to the school in the host. You do not add a tenant parameter to `getRoleMapping`.
 
