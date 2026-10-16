@@ -88,160 +88,67 @@ These rules are the whole design. A change that breaks one of them is not done.
 
 ## Step 1 — Shared kit
 
-Create one repository, `swais-tenant-kit`. Every app depends on it. Do not copy the files into each app.
+The shared kit is [saraswati-tenant-kit](https://github.com/SarafWorldsphere/saraswati-tenant-kit). Every app depends on it. Do not copy the files into each app.
 
 Install from git so you do not need a package registry yet:
 
 ```bash
-pip install "git+https://github.com/sarafworldsphere/swais-tenant-kit.git@v1#subdirectory=python"
-npm install "github:sarafworldsphere/swais-tenant-kit#v1"
+pip install "git+https://github.com/SarafWorldsphere/saraswati-tenant-kit.git@v1#subdirectory=python"
+npm install "github:SarafWorldsphere/saraswati-tenant-kit#v1"
 ```
 
-### Python package `swais_tenant`
-
-Public functions, and nothing else:
+### Python package `saraswati_tenant`
 
 ```python
-def resolve_school(host: str) -> School:
-    """Lookup platform.tenant_domains. Strip port, lowercase.
-    Raise SchoolNotFound or SchoolSuspended. Cache for 60 seconds."""
-
-def current_school() -> School:
-    """Read the context var set by the middleware. Raise if unset."""
-
-def open_school_session():
-    """The only function that opens a school database session.
-    isolation = 'rls'       -> shared engine, then SET LOCAL app.tenant_id
-    isolation = 'database'  -> that school's engine, no SET LOCAL
-    """
+from saraswati_tenant import (
+    SchoolMiddleware,
+    apply_rls,
+    build_key,
+    current_school,
+    open_school_session,
+    resolve_school,
+)
 ```
 
-`School` holds `tenant_id`, `slug`, `status`, `isolation`, public `config`, and (only when `isolation == "database"`) a secret reference. The secret reference is never serialized to the browser.
+`resolve_school(host)` reads `platform.tenant_domains`. It strips the port, lowercases the host, and caches for 60 seconds. An unknown host raises `SchoolNotFound` (HTTP 404). A suspended school raises `SchoolSuspended` (HTTP 403).
 
-FastAPI middleware, used by every backend:
+`current_school()` reads the context var the middleware set.
 
-```python
-class SchoolMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        school = resolve_school(request.headers.get("host", ""))
-        token = school_ctx.set(school)
-        try:
-            return await call_next(request)
-        finally:
-            school_ctx.reset(token)
-```
+`open_school_session()` opens the psycopg connection for that school and sets `app.tenant_id` for the transaction. `isolation = 'rls'` uses `SARASWATI_DATABASE_URL`. `isolation = 'database'` uses the URL mapped from `database_secret` in `SARASWATI_DATABASE_SECRETS`. Both modes set `app.tenant_id`, because both databases run the same row-level security migration.
 
-That middleware is the single layer. `get_db` and `get_connection` become a call to `open_school_session()`. They do not parse the host.
+`apply_rls(db)` is the same `set_config` call for a SQLAlchemy session, used inside the existing `get_db` helpers.
 
-`SET LOCAL` lives for the current transaction only. The sessionmakers already use `autocommit=False`, so the first statement opens a transaction and the setting sticks until commit. Do not turn autocommit on. If a handler calls `commit()` and then runs more SQL, call the set again before the next statement. On a pooled connection, do not use `set_config(..., false)`: that sticks to the connection and the next request can inherit the previous school.
+`build_key("brand", "logo")` returns `{tenant_id}/brand/logo`.
 
-```python
-def apply_rls(session, tenant_id: str) -> None:
-    session.execute(
-        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
-        {"tenant_id": tenant_id},
-    )
-```
+`SchoolMiddleware` is the single layer. `get_db` and `get_connection` call `open_school_session()` or `apply_rls()`. They do not parse the host.
 
-The lookup of the host uses a second, small connection that can read only `platform`. It runs **before** `app.tenant_id` is set. It must not be able to read `student_master` or any other school table.
+`set_config(..., true)` lasts for the current transaction. The sessionmakers already use `autocommit=False`. If a handler calls `commit()` and then runs more SQL, call `apply_rls` again before the next statement. Do not use `set_config(..., false)` on a pooled connection. That sticks to the connection and the next request can inherit the previous school.
 
-### JavaScript package `@swais/tenant-kit`
+The domain lookup uses `SARASWATI_CONTROL_DATABASE_URL` (or the shared URL) and reads only `platform`. It runs before `app.tenant_id` is set. The app role can `SELECT` that schema and cannot `INSERT` into it.
 
-```ts
-export type SchoolConfig = {
-  tenantId: string;
-  slug: string;
-  schoolName: string;
-  shortName: string;
-  place: string;
-  logoUrl: string;       // app path, e.g. /public/brand/logo
-  faviconUrl: string;
-  theme: { primary: string; accent: string; background: string };
-  smsSenderName: string;
-  supportEmail: string;
-};
+### JavaScript package `@saraswati/tenant-kit`
 
-export function TenantProvider(props: { config: SchoolConfig; children: React.ReactNode }): JSX.Element;
-export function useSchool(): SchoolConfig;
-export function SchoolBrand(props: { subtitle?: string }): JSX.Element;
-```
+`TenantProvider`, `useSchool`, `SchoolBrand`, and `loadSchoolConfig` are exported from the package. `SchoolConfig` is `tenantId`, `slug`, `schoolName`, `shortName`, `place`, `logoUrl`, `faviconUrl`, `theme`, `smsSenderName`, and `supportEmail`.
 
-`TenantProvider` sets these CSS variables on `documentElement` from `config.theme`:
-
-```css
---school-primary
---school-accent
---school-background
-```
+`TenantProvider` sets `--school-primary`, `--school-accent`, and `--school-background` from `config.theme`.
 
 `SchoolBrand` renders `config.logoUrl` and `config.schoolName`. It does not accept a school name prop. Callers pass only a subtitle such as `"Faculty"` or `"Headmaster Dashboard"`.
 
 Each app keeps its own navigation. The menus are different. Share the brand, the theme, and the loader. Do not build one sidebar for every role.
 
-### Loader
-
-```ts
-export async function loadSchoolConfig(host: string): Promise<SchoolConfig>
-```
-
-It calls `GET /public/tenant-config` on the **same host**. The server component reads the incoming host with `headers().get("host")` and passes it through. The handler calls `resolve_school`. It returns `config` plus `tenantId` and `slug`. It returns no database URL.
-
-If Node fetches the API on `127.0.0.1`, set the `Host` header to the browser's host before calling `resolve_school`. Do not invent a second lookup.
+`loadSchoolConfig(host)` requests `{proto}://{host}/public/tenant-config`. The handler calls `resolve_school` and returns `School.public_config()`. That body has `tenantId` and `slug` and has no database secret. Set `SARASWATI_PUBLIC_PROTO=http` on a local machine. The server component passes `headers().get("host")` through. Do not invent a second lookup.
 
 ## Step 2 — Control tables
 
-Put these in schema `platform` in the shared database. RLS is **off** for this schema. The app role may `SELECT`. It may not `INSERT`. Provisioning uses a different role (see the provisioning runbook).
+Apply them from the kit. Do not paste a second copy into an app repository.
 
-```sql
-CREATE SCHEMA IF NOT EXISTS platform;
-
-CREATE TABLE platform.tenants (
-    tenant_id     uuid PRIMARY KEY,
-    slug          text NOT NULL UNIQUE,
-    status        text NOT NULL DEFAULT 'active'
-                  CHECK (status IN ('active', 'suspended')),
-    isolation     text NOT NULL DEFAULT 'rls'
-                  CHECK (isolation IN ('rls', 'database')),
-    config        jsonb NOT NULL,
-    database_secret text,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT database_secret_only_when_isolated
-        CHECK (isolation = 'database' OR database_secret IS NULL)
-);
-
-CREATE TABLE platform.tenant_domains (
-    domain        text PRIMARY KEY,
-    tenant_id     uuid NOT NULL REFERENCES platform.tenants (tenant_id),
-    verified_at   timestamptz
-);
-
-CREATE OR REPLACE FUNCTION platform.current_tenant_id()
-RETURNS uuid
-LANGUAGE sql
-STABLE
-AS $$
-    SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid
-$$;
-
-CREATE OR REPLACE FUNCTION platform.stamp_tenant_id()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    current_tenant uuid := platform.current_tenant_id();
-BEGIN
-    IF current_tenant IS NULL THEN
-        RAISE EXCEPTION 'app.tenant_id is not set';
-    END IF;
-    IF NEW.tenant_id IS NULL THEN
-        NEW.tenant_id := current_tenant;
-    ELSIF NEW.tenant_id IS DISTINCT FROM current_tenant THEN
-        RAISE EXCEPTION 'tenant_id does not match the request school';
-    END IF;
-    RETURN NEW;
-END
-$$;
+```bash
+DATABASE_URL=postgresql://... ./scripts/apply.sh
 ```
+
+That runs `src/` first (table definitions and indexes), then `migrations/`. The control plane is `src/10_platform.sql`: `platform.tenants` and `platform.tenant_domains`. Row-level security stays off for `platform`. `migrations/0002_app_grants.sql` lets `saraswati_app` select those two tables and does not let it insert. Provisioning uses the database owner (see the provisioning runbook).
+
+`migrations/0001_row_level_security.sql` creates `platform.current_tenant_id()` and `platform.stamp_tenant_id()`. Those functions are not in `src/`, because they run after the tables exist.
 
 `config` matches the `SchoolConfig` type, without `tenantId` (that is the row's primary key). Example for the SSS school:
 
@@ -276,23 +183,11 @@ Grant the app role `SELECT` on `platform.tenants` and `platform.tenant_domains` 
 
 ## Step 3 — One schema, not a prefix per school
 
-`DB_TABLE_PREFIX` in `sgs-parent-module/backend/database.py` and the `sgs_` / `sss_` table names are the old way of separating schools. Remove that switch. School tables live in `public` with one name each.
+`DB_TABLE_PREFIX` in `sgs-parent-module/backend/database.py` and the `sgs_` / `sss_` table names are the old way of separating schools. Remove that switch. The tables you create are the ones in `saraswati-tenant-kit/src/`. They are unprefixed, each school column is `tenant_id`, and every foreign key is `(tenant_id, id)` so a row cannot point at another school's parent.
 
-Build the shared schema from the kept repositories:
+`scripts/apply.sh` creates them with `tenant_id` already `NOT NULL`, with the unique pairs and the indexes. Do not hand-write a second `CREATE TABLE`.
 
-- Faculty models in `sgs-faculty-backend/app/models/` (`sgs_student_master`, `sgs_teacher_master`, `sgs_class_master`, `sgs_subject_master`, `sgs_chapter_master`, `sgs_chapter_content`, `sgs_assignment_master`, `sgs_assignment_results`, `sgs_assessments`, `sgs_assessment_results`, `sgs_notice_board`, `sgs_file_storage_metadata`, `sgs_users_masters`, `sgs_teacher_notes`, `sgs_teacher_lesson_plans`, `sgs_question_papers`, ...)
-- Student-only tables in `sgs-student-module` (`sgs_student_learning_profiles`, `sgs_student_notification_status`, `sgs_help_support`, `sgs_ai_usage_logs`, `sgs_quiz_response`)
-- Parent tables in `sgs-parent-module` (`parent_master`, `parent_student_map`, support tickets)
-- Headmaster tables that exist only on the SSS side (`sss_student_marks`, `sss_function_master`, `sss_tour_master`)
-
-Rename by dropping the `sgs_` or `sss_` prefix (`sgs_student_master` becomes `student_master`). Do this with views first if you need the old names to keep working during the deploy:
-
-```sql
-ALTER TABLE sgs_student_master RENAME TO student_master;
-CREATE VIEW sgs_student_master AS SELECT * FROM student_master;
-```
-
-Drop the compatibility views once every query in the kept repositories uses the new name. Update `__tablename__` in the SQLAlchemy models and the raw SQL in:
+Point the app queries at those names. Update `__tablename__` and the raw SQL in:
 
 - `sgs-student-module/backend/main.py`
 - `sgs-frontend/lib/role-mapping.ts` (the `table` field of each role)
@@ -302,138 +197,48 @@ Drop the compatibility views once every query in the kept repositories uses the 
 
 Then delete `DB_PREFIX` / `DB_TABLE_PREFIX`.
 
-Copy the SSS school's rows in with `tenant_id` set to the SSS uuid, and the SGS rows with the SGS uuid. Where the same person exists in both databases, they are two rows. Do not merge them by email. The same email address is allowed at two schools once the unique constraints in Step 4 include `tenant_id`.
+Two column renames the admin and headmaster SQL must follow, because the kit uses one name:
 
-`school_id` on `sgs-faculty-backend/app/models/user.py` is unused (login returns `school_name` as `None`). Do not build tenancy on it. `tenant_id` is the column.
+| Current | Kit |
+| --- | --- |
+| `sss_student_master.name` | `student_master.full_name` |
+| `sss_student_master.roll_number` | `student_master.roll_no` |
+| `sss_users_master` | `users_masters` (`username` and `role` are on that table) |
+
+`student_master` also has `gender`, `class_name`, and `student_photo_key`, which the admin app already writes.
+
+Copy the SSS school's rows in with `tenant_id` set to the SSS uuid, and the SGS rows with the SGS uuid. Do the copy inside a transaction that has called `set_config('app.tenant_id', ..., true)`, because the policy is already on after `apply.sh`. Where the same person exists in both databases, they are two rows. Do not merge them by email. The same email is allowed at two schools: the unique indexes are `(tenant_id, student_email)` and the same shape for teacher email, parent email, and `login_id`.
+
+`school_id` on `sgs-faculty-backend/app/models/user.py` is unused (login returns `school_name` as `None`). Do not build tenancy on it. `tenant_id` is the column. The kit does not have `school_id`.
 
 ## Step 4 — RLS on every school table
 
-This is one script, run against `public`. Do not write a policy by hand inside each router.
+The policy is `migrations/0001_row_level_security.sql`. `apply.sh` runs it after `src/`. Do not write a policy by hand inside each router.
 
-Order matters. Enabling the policy before the app sets `app.tenant_id`, or before the backfill, makes every screen empty.
+The migration enables and forces row-level security on every `public` table that has `tenant_id`, creates one policy named `tenant_isolation`, and adds the `stamp_tenant` trigger. The policy compares `tenant_id` to `(SELECT platform.current_tenant_id())`, so the setting is read once per query rather than once per row.
 
-1. Add a nullable `tenant_id uuid` to every ordinary table in `public`.
-2. Backfill. In the database that holds SGS today, set the SGS uuid. After the SSS copy, those rows already have the SSS uuid.
-3. Deploy the apps from step 5 so every session sets `app.tenant_id`.
-4. Run the policy script below. It also installs the stamp trigger, so inserts after this point get `tenant_id` without a change to each INSERT.
-5. Backfill any row whose `tenant_id` is still null (rows written between the first backfill and the trigger).
-6. Set `tenant_id` to `NOT NULL`.
+`USING` hides other schools' rows. `WITH CHECK` rejects a write for another school. The trigger fills `tenant_id` when the INSERT omits it, and rejects an INSERT that names a different school.
 
-Run the script only after the backfill has committed and the apps set `app.tenant_id` on every request. Running it earlier makes every screen empty. The `ADD COLUMN` is safe to repeat.
+A missing setting makes `platform.current_tenant_id()` return null, and `tenant_id = null` matches nothing. That is the fail-closed behavior.
 
-```sql
-DO $$
-DECLARE
-    r record;
-BEGIN
-    FOR r IN
-        SELECT n.nspname AS schema_name, c.relname AS table_name
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public'
-          AND c.relkind = 'r'
-    LOOP
-        EXECUTE format(
-            'ALTER TABLE %I.%I ADD COLUMN IF NOT EXISTS tenant_id uuid',
-            r.schema_name, r.table_name
-        );
-        EXECUTE format(
-            'ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY',
-            r.schema_name, r.table_name
-        );
-        EXECUTE format(
-            'ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY',
-            r.schema_name, r.table_name
-        );
-        EXECUTE format(
-            'DROP POLICY IF EXISTS tenant_isolation ON %I.%I',
-            r.schema_name, r.table_name
-        );
-        EXECUTE format(
-            'CREATE POLICY tenant_isolation ON %I.%I
-               USING (tenant_id = platform.current_tenant_id())
-               WITH CHECK (tenant_id = platform.current_tenant_id())',
-            r.schema_name, r.table_name
-        );
-        EXECUTE format(
-            'DROP TRIGGER IF EXISTS stamp_tenant ON %I.%I',
-            r.schema_name, r.table_name
-        );
-        EXECUTE format(
-            'CREATE TRIGGER stamp_tenant
-               BEFORE INSERT OR UPDATE ON %I.%I
-               FOR EACH ROW EXECUTE FUNCTION platform.stamp_tenant_id()',
-            r.schema_name, r.table_name
-        );
-    END LOOP;
-END
-$$;
-```
-
-`USING` hides other schools' rows on read and update. `WITH CHECK` rejects a write for another school. The trigger fills `tenant_id` when the INSERT omits it, so existing INSERT statements stay as they are.
-
-A missing setting makes `platform.current_tenant_id()` return null, and `tenant_id = null` matches nothing. That is the fail-closed behavior. Do not add a policy that allows the row when the setting is empty.
-
-### Foreign keys and unique emails
-
-RLS does not fix foreign keys. Postgres checks a foreign key as the table owner, which can see the other school's row. A student at school A could be saved with school B's `class_id`.
-
-For each foreign key in `public`, include `tenant_id` in the key:
-
-```sql
-SELECT conrelid::regclass AS table_name,
-       conname,
-       pg_get_constraintdef(oid)
-FROM pg_constraint
-WHERE contype = 'f'
-  AND connamespace = 'public'::regnamespace;
-```
-
-Pattern, using class as the example:
-
-```sql
-ALTER TABLE class_master
-    ADD CONSTRAINT class_master_tenant_id_key UNIQUE (tenant_id, class_id);
-
-ALTER TABLE student_master
-    DROP CONSTRAINT student_master_class_id_fkey,
-    ADD CONSTRAINT student_master_class_fk
-        FOREIGN KEY (tenant_id, class_id)
-        REFERENCES class_master (tenant_id, class_id);
-```
-
-Repeat for every foreign key the query lists. New tables follow the same pattern from the start.
-
-Global unique constraints must include the school, or the second school cannot register an email the first school already uses:
-
-```sql
-SELECT conrelid::regclass, conname, pg_get_constraintdef(oid)
-FROM pg_constraint
-WHERE contype IN ('u', 'p')
-  AND connamespace = 'public'::regnamespace;
-```
-
-Change `UNIQUE (student_email)` to `UNIQUE (tenant_id, student_email)`, and the same for teacher email, parent email, phone, and `login_id`. Do this after `tenant_id` is `NOT NULL`. Postgres treats nulls as distinct, so a unique pair created while the column is still null does not protect you. Leave the existing integer primary key in place.
+On a database that already ran `apply.sh`, do not run a second script that adds `tenant_id`. The column, the unique pair, and the foreign keys are already in `src/`.
 
 ### Alternate: one database per school
 
-Use this only when a school contract requires a separate database. Do not also invent a second connection style. `open_school_session()` already branches on `tenants.isolation`.
+Use this only when a school contract requires a separate database. Run the same `scripts/apply.sh` against that database, including `migrations/0001_row_level_security.sql`. The tables still have `tenant_id`. `open_school_session()` still sets `app.tenant_id`. The only difference is which database it connects to.
 
 | | `isolation = 'rls'` (default) | `isolation = 'database'` |
 | --- | --- | --- |
-| Where rows live | One database, `tenant_id` on every table | One database per school, no `tenant_id` |
-| What the session does | `SET LOCAL app.tenant_id` | Connects with that school's secret |
-| RLS script | Required | Not applied in the school database |
-| S3 prefix | `{tenant_id}/...` | `{tenant_id}/...` (same) |
-| Branding JSON | Same `config` column | Same `config` column |
-| Host lookup | `platform` schema in the shared database | `platform` stays in a small control database |
+| Where rows live | The shared database | `school_<slug>`, created empty, then `apply.sh` |
+| What the session does | Sets `app.tenant_id` on the shared pool | Sets `app.tenant_id` on that school's pool (max 2 connections) |
+| Schema | `src/` plus `migrations/` | The same files |
+| S3 prefix | `{tenant_id}/...` | `{tenant_id}/...` |
+| Branding JSON | `platform.tenants.config` in the control database | The same control row. `database_secret` names the secret, not the URL |
+| Host lookup | `platform.tenant_domains` | The same lookup. The control database stays shared |
 
-For a database-isolated school:
+Store the connection string in a secret manager. Save the secret name in `platform.tenants.database_secret`. Map it for the process with `SARASWATI_DATABASE_SECRETS`. Do not store the URL in `config`.
 
-- Create an empty database and run the schema migrations **without** the RLS script.
-- Store the connection string in a secret manager. Save the secret name in `platform.tenants.database_secret`. Do not store the URL in `config`.
-- Cache one SQLAlchemy engine per tenant id inside `open_school_session()`. Cap the pool (the faculty API already sizes its pool from `max_connections` in `app/db/pool.py`; a per-school engine needs a much smaller pool, on the order of the headmaster API's `pool_size=2`).
-- Run migrations once per school database when the schema changes. The provisioning runbook lists that step.
+When the schema changes, run the new kit files on the shared database and on every database where `isolation = 'database'`.
 
 The resolver, the middleware, the S3 prefix, and the React components do not change between the two modes.
 
@@ -550,16 +355,16 @@ Add these before calling the conversion done. They are the acceptance tests.
 6. `GET /public/tenant-config` with `Host: sss.swais.in` returns "Shiva Satya Sai School". The body has no `database_secret` and no connection string.
 7. Upload a chapter file. The key starts with the tenant uuid. A presign request that passes a key in the body is rejected.
 8. Render the login page with a fixture config whose `schoolName` is `"Example School"`. The HTML contains that name and does not contain "SGS Senior Secondary School" or "SSS SCHOOL".
-9. For a database-isolated school, the same student request hits that school's database and does not run `set_config`.
+9. For a database-isolated school, the same student request hits that school's database and still sets `app.tenant_id` there.
 
 ## Order of work
 
 Do it in this order. Later steps assume the earlier ones.
 
 1. Feature ports listed at the top (student chapter upload, assignments, assessments; parent dashboard and voice).
-2. `swais-tenant-kit` with the resolver, `open_school_session`, S3 builder, and `SchoolBrand`.
+2. Depend on `saraswati-tenant-kit`. The resolver, `open_school_session`, the S3 key helper, and `SchoolBrand` are already there. Apply `src/` and then `migrations/` with `scripts/apply.sh`.
 3. `platform` tables, and the two tenant rows for `sgs` and `sss` (provisioning runbook, first-school section).
-4. Rename tables, backfill `tenant_id`, then enable RLS.
+4. Rename tables to the names in `saraswati-tenant-kit/src/`, copy SGS and SSS rows in with `tenant_id` set inside `set_config`, which the policy from `migrations/0001_row_level_security.sql` already enforces.
 5. Switch the six connection helpers and add the middleware.
 6. S3 prefix on new uploads, brand route, delete hardcoded names.
 7. Acceptance tests above.

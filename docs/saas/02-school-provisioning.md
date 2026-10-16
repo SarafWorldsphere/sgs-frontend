@@ -1,6 +1,6 @@
 # Provision a new school
 
-Use this after the conversion in [01-saas-conversion.md](./01-saas-conversion.md) is deployed. The person doing these steps needs database access as the provisioning role, DNS access, and write access to the S3 bucket. They do not change application code and they do not start a new server.
+Use this after the conversion in [01-saas-conversion.md](./01-saas-conversion.md) is deployed. The shared database already has `saraswati-tenant-kit` applied (`scripts/apply.sh`: `src/` then `migrations/`). The person doing these steps needs database access as the database owner, DNS access, and write access to the S3 bucket. They do not change application code and they do not start a new server.
 
 A school is ready when a browser opened on its domain shows that school's name and logo, a user of that school can sign in, and a user of another school cannot see this school's students.
 
@@ -35,14 +35,14 @@ echo "$TENANT_ID"
 
 | Role | Used for | Can bypass RLS |
 | --- | --- | --- |
-| App role (`swais_app_user`) | The running websites | No |
-| Provisioning role | The steps in this document | Yes, so it can insert the first rows before a school session exists |
+| App role (`saraswati_app`, granted to `swais_app_user`) | The running websites | No |
+| Database owner | The steps in this document | No. `FORCE ROW LEVEL SECURITY` applies to the owner. School-table inserts set `app.tenant_id`. Inserts into `platform` are allowed because that schema has no policy. |
 
-Do not run these steps as the app role. Do not put the provisioning password in the app environment.
+Do not run these steps as the app role. The app role cannot insert into `platform.tenants`. Do not put a database password in the app environment.
 
 ## Step 1 — Insert the school
 
-Connect to the control database (the shared database, schema `platform`) as the provisioning role.
+Connect to the control database (the shared database, schema `platform`) as the database owner.
 
 `config` is the JSON the browser renders. It must not contain a database URL, a password, or a bucket name.
 
@@ -117,11 +117,11 @@ SELECT set_config('app.tenant_id', :tenant_id, true);
 COMMIT;
 ```
 
-RLS is forced on these tables. The provisioning role can bypass it, so you must set `app.tenant_id` yourself and you must set `tenant_id` on every inserted row to the same value. The stamp trigger will reject a mismatch.
+RLS is forced on these tables, including for the table owner. Set `app.tenant_id` in the transaction. The stamp trigger fills `tenant_id` when the INSERT omits it, and rejects a value for a different school.
 
 ### Alternate: a separate database (`isolation = 'database'`)
 
-Use this when the school requires its own database. Skip the `set_config` block. Do the following instead.
+Use this when the school requires its own database. The table definitions are still `saraswati-tenant-kit/src/`, and you still run `migrations/`, including row-level security. `tenant_id` is on every school table in that database too.
 
 1. Create the database. Name it `school_<slug>`. Use the ASCII slug only.
 
@@ -129,9 +129,9 @@ Use this when the school requires its own database. Skip the `set_config` block.
    CREATE DATABASE school_greenwood;
    ```
 
-2. Run the application schema migrations against that database. Do **not** run the RLS policy script there. Tables in a dedicated database have no `tenant_id` column.
+2. Run `scripts/apply.sh` against `school_greenwood`. That loads `src/` and then `migrations/0001_row_level_security.sql` and `migrations/0002_app_grants.sql`.
 
-3. Store the connection string in the secret manager. The secret value is the full URL, including the password. The name of the secret is what goes in Postgres:
+3. Store the connection string in the secret manager. The secret value is the full URL, including the password. The name of the secret is what goes in the control database:
 
    ```sql
    UPDATE platform.tenants
@@ -140,9 +140,11 @@ Use this when the school requires its own database. Skip the `set_config` block.
    WHERE tenant_id = :tenant_id;
    ```
 
-4. Run the seed SQL from step 6 against `school_greenwood`, not against the shared database.
+   Put the same secret name in `SARASWATI_DATABASE_SECRETS` on the app hosts: `schools/greenwood/database-url=postgresql://...`
 
-5. When the application schema changes later, run that migration once for the shared database and once for every row where `isolation = 'database'`. A school database that misses a migration will break only that school.
+4. Run the seed SQL from step 6 against `school_greenwood`, inside `set_config('app.tenant_id', :tenant_id, true)`, the same way as the shared database.
+
+5. When the kit's `src/` or `migrations/` change, run the new files on the shared database and on every `school_<slug>` database.
 
 S3 and the branding JSON are the same in both modes. A separate database does not mean a separate bucket or a separate website deploy.
 
@@ -243,7 +245,7 @@ Sign in as the new admin on `https://sgs.swais.in/`. The login must fail the sam
 
 ### Database
 
-As the provisioning role:
+As the database owner:
 
 ```sql
 BEGIN;
