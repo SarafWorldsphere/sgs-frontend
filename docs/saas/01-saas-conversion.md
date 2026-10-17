@@ -195,19 +195,20 @@ Grant the app role `SELECT` on `platform.tenants` and `platform.tenant_domains` 
 
 ## Step 3 — One schema, not a prefix per school
 
-`DB_TABLE_PREFIX` in `sgs-parent-module/backend/database.py` and the `sgs_` / `sss_` table names are the old way of separating schools. Remove that switch. The tables you create are the ones in `saraswati-tenant-kit/src/`. They are unprefixed, each school column is `tenant_id`, and every foreign key is `(tenant_id, id)` so a row cannot point at another school's parent.
+`DB_TABLE_PREFIX` and the `sgs_` / `sss_` table names are the old way of separating schools. Remove that switch. The tables you create are the ones in `saraswati-tenant-kit/src/`. They are unprefixed, each school column is `tenant_id`, and every foreign key is `(tenant_id, id)` so a row cannot point at another school's parent.
 
 `scripts/apply.sh` creates them with `tenant_id` already `NOT NULL`, with the unique pairs and the indexes. Do not hand-write a second `CREATE TABLE`.
 
-Point the app queries at those names. Update `__tablename__` and the raw SQL in:
+Parent models in `sgs-parent-module/backend/models.py` already use these unprefixed names, and the comments in that file use the same names. `database.py` no longer reads `DB_TABLE_PREFIX`. `support_tickets.recipient_name` is already a column in `saraswati-tenant-kit/src/60_school_life.sql`. Do not add a one-off script to create that column, and do not put the prefix back.
+
+Point the remaining app queries at those names. Update `__tablename__` and the raw SQL in:
 
 - `sgs-student-module/backend/main.py`
 - `sgs-frontend/lib/role-mapping.ts` (the `table` field of each role)
 - `sss-hm-dashboard/backend` route files (raw `sss_*` SQL)
 - `sss-admin-dashboard/sss-admin-backend/app/routers/admin.py` (raw `public.sss_*` SQL)
-- `sgs-parent-module` models that prefix with `DB_PREFIX`
 
-Then delete `DB_PREFIX` / `DB_TABLE_PREFIX`.
+Then delete `DB_PREFIX` / `DB_TABLE_PREFIX` from any app that still reads it.
 
 Two column renames the admin and headmaster SQL must follow, because the kit uses one name:
 
