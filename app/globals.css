@@ -1,25 +1,17 @@
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Caveat:wght@600&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --ink: #12325b;          /* headings */
-  --ink-soft: #1b3a5c;     /* field labels */
-  --muted: #5b7291;        /* body copy */
-  --faint: #8aa0b8;        /* dividers, footer */
-  --placeholder: #9bb0c7;
-
-  --blue: #2f74dc;
-  --blue-deep: #1b3f9e;
-  --blue-tint: #e8f1fd;
-
-  --border: #dce7f3;
-  --border-soft: #e9f0f8;
+  --school-primary: #082360;
+  --school-accent: #2f16cc;
+  --school-background: #eff4fb;
+  --ink: #101a3f;
+  --muted: #5c6377;
+  --border: #d9d9e3;
+  --gold: #e6a23a;
   --panel: #ffffff;
-  --page: #eaf2fb;
-  --danger: #e2483d;
+  --danger: #b42318;
 }
 
 * {
@@ -34,9 +26,9 @@ body {
 
 body {
   min-height: 100vh;
-  font-family: "Poppins", "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Aptos", "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
-  background: var(--page);
+  background: var(--school-background);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -52,274 +44,209 @@ input:disabled {
   opacity: 0.72;
 }
 
-/* ============================================
-   LOGIN — split layout: campus hero (left),
-   form card on a soft blue field (right)
-   ============================================ */
-
 .login-page {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background:
-    radial-gradient(60rem 40rem at 88% 8%, #dfeaf9 0%, rgba(223, 234, 249, 0) 60%),
-    radial-gradient(48rem 36rem at 96% 82%, #e3edfb 0%, rgba(227, 237, 251, 0) 62%),
-    linear-gradient(180deg, #f2f7fd 0%, #e8f1fb 100%);
-}
-
-.scene {
-  flex: 1;
-  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-}
-
-/* ---- campus / brand side ---- */
-
-.hero {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 3.5rem clamp(2rem, 4vw, 4rem);
+  grid-template-columns: minmax(320px, 32%) 1fr;
   overflow: hidden;
-  /* The campus artwork is busy, so a scrim keeps the copy legible. It is
-     strongest on the left where the text sits and clears toward the right
-     so the building still reads as the backdrop. */
-  background-image:
-    linear-gradient(
-      102deg,
-      rgba(255, 255, 255, 0.95) 0%,
-      rgba(255, 255, 255, 0.88) 34%,
-      rgba(255, 255, 255, 0.55) 58%,
-      rgba(233, 243, 253, 0.25) 100%
-    ),
-    url("/assets/campus-hero.png");
-  background-size: cover;
-  background-position: center bottom;
 }
 
-.hero-inner {
+.brand-panel {
   position: relative;
-  z-index: 1;
-  max-width: 30rem;
+  min-height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--school-accent) 22%, white) 0%,
+    var(--school-background) 47%,
+    color-mix(in srgb, var(--school-primary) 10%, white) 100%
+  );
 }
 
-.crest-chip {
-  width: 5.25rem;
-  height: 5.25rem;
-  border-radius: 1.15rem;
-  background: var(--panel);
-  display: grid;
-  place-items: center;
-  box-shadow: 0 0.75rem 2rem rgba(21, 63, 119, 0.18);
-  margin-bottom: 1.75rem;
+.campus-art {
+  position: absolute;
+  inset: auto 0 0;
+  width: 100%;
+  height: 56%;
+  object-fit: cover;
+  object-position: center bottom;
 }
 
-.crest-chip img {
-  width: 78%;
-  height: 78%;
+.sky-shape {
+  position: absolute;
+  background: linear-gradient(135deg, var(--school-primary) 0%, var(--school-accent) 100%);
+  pointer-events: none;
+}
+
+.top-shape {
+  width: 92%;
+  height: 27%;
+  left: -26%;
+  top: -6%;
+  border-bottom-right-radius: 58% 70%;
+  transform: rotate(-8deg);
+}
+
+.bottom-shape {
+  width: 85%;
+  height: 17%;
+  right: -26%;
+  bottom: -5%;
+  border-top-left-radius: 70% 80%;
+  z-index: 2;
+}
+
+.dot-grid {
+  position: absolute;
+  top: 54px;
+  left: 28px;
+  width: 84px;
+  height: 84px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.74) 1.5px, transparent 1.5px);
+  background-size: 16px 16px;
+  opacity: 0.72;
+}
+
+.brand-content {
+  position: relative;
+  z-index: 3;
+  min-height: 56vh;
+  padding: 5.8vh 4.2vw 0;
+  text-align: center;
+}
+
+.school-logo {
+  display: block;
+  width: min(220px, 78%);
+  height: auto;
+  margin: 0 auto 8px;
   object-fit: contain;
 }
 
-.hero h1 {
+.brand-content h1 {
   margin: 0;
-  font-size: clamp(1.9rem, 3.1vw, 2.7rem);
-  line-height: 1.16;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  color: #11365f;
+  color: var(--school-primary);
+  font-size: clamp(28px, 2.4vw, 40px);
+  line-height: 1.1;
+  font-weight: 750;
 }
 
-.hero-loc {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  margin-top: 1rem;
-}
-
-.hero-loc span {
-  width: 2.25rem;
-  height: 0.2rem;
-  border-radius: 999px;
-  background: var(--blue);
-}
-
-.hero-loc strong {
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0.32em;
-  color: #2c5d99;
-}
-
-.hero-tag {
-  margin: 1.4rem 0 0;
-  max-width: 24rem;
-  font-size: 1.05rem;
-  line-height: 1.62;
-  color: #43607f;
-}
-
-.hero-badges {
-  display: flex;
-  align-items: center;
-  gap: 1.1rem;
-  margin-top: 1.9rem;
-}
-
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.97rem;
-  font-weight: 500;
-  color: #2b537f;
-}
-
-.hero-badge svg {
-  width: 1.2rem;
-  height: 1.2rem;
-  fill: none;
-  stroke: var(--blue);
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.badge-sep {
-  width: 1px;
-  height: 1.1rem;
-  background: #b6cbe2;
-}
-
-.hero-motto {
+.gold-divider {
+  width: 94px;
+  height: 3px;
+  margin: 18px auto 16px;
+  background: var(--gold);
   position: relative;
-  z-index: 1;
-  margin: auto 0 0;
-  padding-top: 2.5rem;
-  font-family: "Caveat", "Segoe Script", cursive;
-  font-size: clamp(1.5rem, 2.3vw, 2rem);
-  color: #1b4fa0;
-  text-shadow: 0 0.1rem 0.7rem rgba(255, 255, 255, 0.9);
 }
 
-.hero-motto b {
-  margin: 0 0.5rem;
-  font-weight: 600;
-  opacity: 0.85;
+.gold-divider::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold);
+  transform: translate(-50%, -50%);
 }
 
-/* ---- form side ---- */
+.tagline {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  color: var(--school-primary);
+}
 
-.form-side {
+.form-panel {
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 1.75rem;
-  padding: 3rem clamp(1.5rem, 3.5vw, 3.5rem);
+  justify-content: center;
+  padding: 28px 3vw;
+  background:
+    radial-gradient(circle at 72% 8%, color-mix(in srgb, var(--school-accent) 18%, transparent), transparent 30%),
+    linear-gradient(135deg, white 0%, var(--school-background) 100%);
 }
 
-.card {
-  width: min(100%, 33rem);
-  background: var(--panel);
-  border-radius: 1.5rem;
-  padding: clamp(2rem, 3vw, 2.75rem);
-  box-shadow: 0 1.5rem 3.5rem rgba(20, 58, 107, 0.12);
+.login-card {
+  width: min(640px, 100%);
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 22px;
+  box-shadow: 0 24px 55px color-mix(in srgb, var(--school-primary) 16%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.92);
 }
 
-.wave {
+.form-inner {
+  width: 100%;
+  padding: 48px 48px 40px;
+}
+
+.section-title,
+.field-group > span:not(.input-wrap) {
   display: block;
-  font-size: 1.85rem;
-  line-height: 1;
-  margin-bottom: 0.85rem;
-}
-
-.welcome-heading {
-  margin: 0;
-  font-size: clamp(1.85rem, 2.6vw, 2.35rem);
+  margin: 0 0 14px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: -0.02em;
   color: var(--ink);
 }
-
-.welcome-sub {
-  margin: 0.45rem 0 0;
-  font-size: 1.02rem;
-  color: var(--muted);
-}
-
-/* tabs */
 
 .tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
-  margin-top: 1.7rem;
-  padding: 0.35rem;
-  border: 1px solid var(--border-soft);
-  border-radius: 0.95rem;
-  background: #f5f9fe;
+  min-height: 64px;
+  margin-bottom: 28px;
+  border: 2px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
 }
 
 .tab {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
-  padding: 0.8rem 0.5rem;
+  gap: 10px;
   border: 0;
-  border-radius: 0.7rem;
-  background: transparent;
-  color: #3d5f87;
-  font-size: 1rem;
-  font-weight: 500;
+  background: #fff;
+  color: #16182a;
+  font-size: 16px;
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.tab svg {
-  width: 1.2rem;
-  height: 1.2rem;
+.tab + .tab {
+  border-left: 2px solid var(--border);
+}
+
+.tab svg,
+.input-wrap svg,
+.select-label svg,
+.sign-in svg,
+.administrator svg,
+.chevron {
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .tab.active {
-  background: var(--blue-tint);
-  color: #1b4fa0;
-  font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(47, 116, 220, 0.18);
+  color: var(--school-accent);
+  background: color-mix(in srgb, var(--school-accent) 10%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--school-accent) 35%, white);
 }
-
-.tab:not(.active):not(:disabled):hover {
-  background: #eef4fc;
-}
-
-/* fields */
 
 .field-group {
   display: block;
-  margin-top: 1.4rem;
-}
-
-/* The label text only. `.input-wrap` is also a direct-child <span>, and
-   without the exclusion this rule outranks it and turns the input box into
-   display:block — which is what made the icon and placeholder sit high. */
-.field-group > span:not(.input-wrap) {
-  display: block;
-  margin-bottom: 0.55rem;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--ink-soft);
+  margin-bottom: 20px;
 }
 
 .required-marker {
   color: var(--danger);
-  font-weight: 700;
 }
 
 .role-dropdown {
@@ -329,84 +256,55 @@ input:disabled {
 .input-wrap,
 .select-box {
   width: 100%;
+  min-height: 56px;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0 1rem;
-  height: 3.4rem;
-  border: 1px solid var(--border);
-  border-radius: 0.8rem;
-  background: #fdfeff;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.input-wrap svg,
-.select-label svg {
-  width: 1.3rem;
-  height: 1.3rem;
-  flex: none;
-  fill: none;
-  stroke: #7d9bbd;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.input-wrap:focus-within,
-.select-box.open,
-.select-box:focus-visible {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 4px rgba(47, 116, 220, 0.13);
-  outline: none;
+  gap: 12px;
+  padding: 0 16px;
+  border: 2px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--school-accent);
 }
 
 .input-wrap input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
-  height: 100%;
-  padding: 0;
   border: 0;
-  outline: none;
+  outline: 0;
   background: transparent;
-  font-size: 1rem;
-  font-weight: 400;
-  line-height: 1.2;
-  color: var(--ink);
+  color: #202437;
+  font-size: 16px;
 }
 
-.input-wrap input::placeholder {
-  color: var(--placeholder);
+.input-wrap input::placeholder,
+.select-label .is-placeholder {
+  color: #5f6475;
 }
 
 .select-box {
   justify-content: space-between;
   cursor: pointer;
   text-align: left;
-  color: var(--ink);
+}
+
+.select-box.open,
+.input-wrap:focus-within {
+  border-color: var(--school-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--school-accent) 16%, transparent);
 }
 
 .select-label {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.75rem;
-  font-size: 1rem;
-  min-width: 0;
-}
-
-.select-label .is-placeholder {
-  color: var(--placeholder);
+  gap: 12px;
+  color: var(--school-accent);
+  font-size: 16px;
 }
 
 .chevron {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex: none;
-  fill: none;
-  stroke: #7d9bbd;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 0.18s ease;
+  color: #0e1221;
+  pointer-events: none;
 }
 
 .select-box.open .chevron {
@@ -415,97 +313,73 @@ input:disabled {
 
 .role-menu {
   position: absolute;
-  z-index: 20;
-  top: calc(100% + 0.45rem);
+  top: calc(100% + 8px);
   left: 0;
-  right: 0;
-  padding: 0.35rem;
-  border: 1px solid var(--border);
-  border-radius: 0.8rem;
-  background: var(--panel);
-  box-shadow: 0 1rem 2.5rem rgba(20, 58, 107, 0.16);
-  max-height: 15rem;
-  overflow-y: auto;
+  z-index: 20;
+  width: 100%;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  border-radius: 9px;
+  background: #ffffff;
+  box-shadow: 0 18px 34px color-mix(in srgb, var(--school-primary) 14%, transparent);
 }
 
 .role-menu-option {
   display: block;
   width: 100%;
-  padding: 0.75rem 0.85rem;
+  min-height: 48px;
+  padding: 0 16px;
   border: 0;
-  border-radius: 0.55rem;
-  background: transparent;
+  border-bottom: 1px solid #ececf4;
+  background: #ffffff;
+  color: #10172f;
+  font-size: 16px;
   text-align: left;
-  font-size: 0.98rem;
-  color: var(--ink);
   cursor: pointer;
+}
+
+.role-menu-option:last-child {
+  border-bottom: 0;
 }
 
 .role-menu-option:hover,
 .role-menu-option.selected {
-  background: var(--blue-tint);
-  color: #1b4fa0;
-  font-weight: 600;
+  color: var(--school-accent);
+  background: color-mix(in srgb, var(--school-accent) 10%, white);
 }
 
 .form-message {
-  margin-top: 1rem;
-  padding: 0.8rem 1rem;
-  border: 1px solid #f6c9c4;
-  border-radius: 0.7rem;
-  background: #fdf1f0;
-  font-size: 0.93rem;
-  color: #b3372c;
+  margin: -4px 0 16px;
+  color: var(--danger);
+  font-size: 15px;
+  font-weight: 600;
 }
-
-/* submit */
 
 .sign-in {
   width: 100%;
-  display: inline-flex;
+  min-height: 56px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(180deg, var(--school-accent) 0%, var(--school-primary) 100%);
+  box-shadow: 0 12px 18px color-mix(in srgb, var(--school-accent) 28%, transparent);
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.7rem;
-  margin-top: 1.7rem;
-  padding: 1.05rem 1.25rem;
-  border: 0;
-  border-radius: 0.8rem;
-  background: linear-gradient(90deg, var(--blue) 0%, var(--blue-deep) 100%);
-  color: #ffffff;
-  font-size: 1.05rem;
-  font-weight: 600;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 0.7rem 1.5rem rgba(27, 63, 158, 0.28);
-  transition: filter 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.sign-in:not(:disabled):hover {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
-  box-shadow: 0 0.9rem 1.9rem rgba(27, 63, 158, 0.34);
-}
-
-.sign-in:disabled {
-  box-shadow: none;
-}
-
-.sign-in svg {
-  width: 1.25rem;
-  height: 1.25rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .loader {
-  width: 1.2rem;
-  height: 1.2rem;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.45);
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.42);
   border-top-color: #ffffff;
-  animation: spin 0.7s linear infinite;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
@@ -514,16 +388,13 @@ input:disabled {
   }
 }
 
-/* or / footer */
-
 .or-row {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  margin-top: 1.5rem;
-  color: var(--faint);
-  font-size: 0.85rem;
-  font-weight: 500;
+  gap: 14px;
+  margin: 22px 4px 8px;
+  color: #44495b;
+  font-size: 14px;
   letter-spacing: 0.08em;
 }
 
@@ -532,124 +403,155 @@ input:disabled {
   content: "";
   flex: 1;
   height: 1px;
-  background: #e1eaf4;
+  background: #d9d9df;
 }
 
 .administrator {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  margin: 1.35rem 0 0;
-  font-size: 0.93rem;
-  color: var(--muted);
+  gap: 8px;
+  margin: 16px 0 0;
   text-align: center;
-  flex-wrap: wrap;
+  font-size: 15px;
+  color: #242838;
 }
 
-.administrator svg {
-  width: 1.15rem;
-  height: 1.15rem;
-  flex: none;
-  fill: none;
-  stroke: var(--blue);
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.administrator strong {
-  color: #1b4fa0;
-  font-weight: 600;
+.administrator strong,
+.footer-link {
+  color: var(--school-accent);
 }
 
 .page-footer {
+  width: min(900px, 100%);
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 1.25rem 1.5rem 1.6rem;
-  font-size: 0.88rem;
-  color: var(--muted); /* #7c92ac was 3.2:1 on the page ground — below AA */
+  gap: 16px;
+  margin-top: 24px;
+  color: #5b6170;
+  font-size: 14px;
+  flex-wrap: wrap;
 }
 
 .page-footer i {
   font-style: normal;
-  color: #b8c9dc;
 }
 
 .footer-link {
   cursor: pointer;
 }
 
-.footer-link:hover {
-  color: #1b4fa0;
-  text-decoration: underline;
+.login-centered {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: var(--school-background);
 }
 
-/* ---- responsive ---- */
-
-@media (max-width: 960px) {
-  .scene {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .hero {
-    padding: 3rem 1.5rem 2.5rem;
-    text-align: center;
-    align-items: center;
-    /* Copy is centred here, so the directional scrim no longer sits behind it
-       — use an even wash instead. */
-    background-image:
-      linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.92) 0%,
-        rgba(255, 255, 255, 0.86) 55%,
-        rgba(236, 244, 253, 0.82) 100%
-      ),
-      url("/assets/campus-hero.png");
-  }
-
-  .hero-inner {
-    max-width: 34rem;
-  }
-
-  .crest-chip {
-    margin-inline: auto;
-  }
-
-  .hero-loc,
-  .hero-badges {
-    justify-content: center;
-  }
-
-  .hero-tag {
-    margin-inline: auto;
-  }
-
-  .hero-motto {
-    padding-top: 1.75rem;
-    text-align: center;
-  }
-
-  .form-side {
-    padding: 2.5rem 1.25rem 3rem;
-  }
+.centered-card {
+  width: min(560px, 100%);
+  background: var(--panel);
+  border-radius: 16px;
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--school-primary) 12%, transparent);
+  padding: 36px 32px 20px;
+  text-align: center;
 }
 
-@media (max-width: 480px) {
-  .card {
-    padding: 1.5rem 1.25rem;
-    border-radius: 1.15rem;
-  }
+.centered-card .school-logo {
+  width: min(120px, 40%);
+}
 
-  .tabs {
+.centered-card h1 {
+  margin: 12px 0 8px;
+  color: var(--school-primary);
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.centered-lead {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.centered-card .login-card {
+  box-shadow: none;
+  border: 0;
+  background: transparent;
+}
+
+.centered-card .form-inner {
+  padding: 12px 0 0;
+}
+
+.inside-shell {
+  min-height: 100vh;
+  background: var(--school-background);
+}
+
+.inside-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 28px;
+  background: var(--school-primary);
+  color: #fff;
+}
+
+.inside-bar img {
+  height: 40px;
+  width: auto;
+}
+
+.inside-body {
+  padding: 32px;
+}
+
+.inside-centered {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: var(--school-background);
+}
+
+.inside-centered-card {
+  width: min(480px, 100%);
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--school-primary) 12%, transparent);
+}
+
+.inside-centered-card h1 {
+  margin: 12px 0 20px;
+  color: var(--school-primary);
+  font-size: 24px;
+}
+
+@media (max-width: 980px) {
+  .login-page {
     grid-template-columns: 1fr;
   }
 
-  .hero-badges {
-    flex-wrap: wrap;
-    row-gap: 0.6rem;
+  .brand-panel,
+  .form-panel {
+    min-height: auto;
+  }
+
+  .brand-content {
+    min-height: 0;
+    padding: 48px 24px 220px;
+  }
+
+  .form-panel {
+    padding: 28px 18px 36px;
+  }
+
+  .form-inner {
+    padding: 32px 22px 28px;
   }
 }

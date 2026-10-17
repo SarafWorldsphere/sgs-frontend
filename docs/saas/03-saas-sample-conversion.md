@@ -137,9 +137,9 @@ connect to psql `psql saraswati_sample`
 INSERT INTO platform.tenants (tenant_id, slug, status, isolation, config)
 VALUES
   ('11111111-1111-1111-1111-111111111111', 'sgs', 'active', 'rls',
-   '{"schoolName":"SGS Senior Secondary School","shortName":"SGS","place":"SHREERAMNAGAR","logoUrl":"/public/brand/logo","faviconUrl":"/public/brand/favicon","theme":{"primary":"#0F172A","accent":"#6366F1","background":"#F8FAFC"},"smsSenderName":"SGS School","supportEmail":""}'),
+   '{"schoolName":"SGS Senior Secondary School","shortName":"SGS","place":"SHREERAMNAGAR","logoUrl":"/assets/11111111-1111-1111-1111-111111111111/images/logo.jpeg","faviconUrl":"/assets/sgs-logo.png","theme":"bright-blue","layout":"image-left","smsSenderName":"SGS School","supportEmail":""}'),
   ('22222222-2222-2222-2222-222222222222', 'sss', 'active', 'rls',
-   '{"schoolName":"Shiva Satya Sai School","shortName":"SSS","place":"","logoUrl":"/public/brand/logo","faviconUrl":"/public/brand/favicon","theme":{"primary":"#0F172A","accent":"#6366F1","background":"#F8FAFC"},"smsSenderName":"SSS School","supportEmail":""}');
+   '{"schoolName":"Shiva Satya Sai School","shortName":"SSS","place":"","logoUrl":"/assets/22222222-2222-2222-2222-222222222222/images/logo.jpeg","faviconUrl":"/assets/sss-logo.jpeg","theme":"indigo-classic","layout":"image-left","smsSenderName":"SSS School","supportEmail":""}');
 
 INSERT INTO platform.tenant_domains (domain, tenant_id, verified_at) VALUES
   ('sgs.localhost', '11111111-1111-1111-1111-111111111111', now()),
@@ -158,6 +158,8 @@ VALUES ('SSS Student', 'sss.student@example.com');
 COMMIT;
 ```
 
+SGS is theme `bright-blue` and layout `image-left`. SSS is theme `indigo-classic` and layout `image-left`. A JCLG school uses theme `plain-card` and layout `centered`.
+
 As `swais_app_user`, with no `app.tenant_id` set, this returns zero rows:
 
 ```bash
@@ -165,7 +167,7 @@ psql "postgresql://swais_app_user:local-only-password@localhost/saraswati_sample
   -c "SELECT full_name, student_email FROM student_master;"
 ```
 
-The login-app files are already on branch `saas`: `lib/school.ts`, `proxy.ts`, `lib/db.ts`, the table names in `lib/role-mapping.ts`, `app/public/tenant-config/route.ts`, and `SchoolBrand` on the login page. Check out that branch and set the environment below. The code blocks that used to be copied by hand are in [01-saas-conversion.md](./01-saas-conversion.md) under "Same two calls in every module", for the other apps.
+The login-app files are already on branch `saas`: `proxy.ts`, `lib/db.ts`, the table names in `lib/role-mapping.ts`, `app/public/tenant-config/route.ts`, and the login layouts in `app/layouts`. The host lookup and the logo URL come from `@saraswati/tenant-kit`. Check out that branch and set the environment below. The code blocks that used to be copied by hand are in [01-saas-conversion.md](./01-saas-conversion.md) under "Same two calls in every module", for the other apps.
 
 ```bash
 git checkout saas

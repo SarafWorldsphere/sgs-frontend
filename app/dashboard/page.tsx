@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { InsideSurface } from '../layouts';
 
 // Disable all forms of prerendering for this page
 export const dynamic = 'force-dynamic';
@@ -81,6 +82,7 @@ export default function DashboardPage() {
 
   if (error) {
     return (
+      <InsideSurface>
       <div className="flex flex-col justify-center items-center h-screen">
         <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
         <p className="text-gray-600 mt-2">{error}</p>
@@ -91,15 +93,18 @@ export default function DashboardPage() {
           Go Back to Login
         </button>
       </div>
+      </InsideSurface>
     );
   }
 
   return (
+    <InsideSurface>
     <div className="flex justify-center items-center h-screen">
       <div className="text-center">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
         <p>Redirecting to your dashboard...</p>
       </div>
     </div>
+    </InsideSurface>
   );
 }

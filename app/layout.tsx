@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { TenantProvider, loadSchoolConfig } from "@saraswati/tenant-kit";
+import { TenantProvider, loadSchoolConfig, themeName } from "@saraswati/tenant-kit";
+import "@saraswati/tenant-kit/themes.css";
 import "./globals.css";
 import Providers from "./providers";
 
@@ -17,7 +18,7 @@ export default async function RootLayout({
   const host = (await headers()).get("host") ?? "";
   const config = await loadSchoolConfig(host);
   return (
-    <html lang="en">
+    <html lang="en" data-theme={themeName(config.theme)}>
       <body>
         <Providers>
           <TenantProvider config={config}>{children}</TenantProvider>

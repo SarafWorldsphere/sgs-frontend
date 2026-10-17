@@ -16,8 +16,8 @@ Fill this in before touching the database. The slug is permanent. Use lowercase 
 | Slug | `sss` | Becomes `{slug}.swais.in` |
 | Custom domain | `portal.school.edu` | Optional. Leave blank to use only `{slug}.swais.in` |
 | Isolation | `rls` or `database` | `rls` puts the school in the shared database. `database` creates a separate Postgres database. Default is `rls` |
-| Primary color | `#0F172A` | Header and sidebar |
-| Accent color | `#6366F1` | Buttons and the active nav item |
+| Theme | `indigo-classic` | Color name. Also `bright-blue` or `plain-card` |
+| Layout | `image-left` | Screen arrangement. `image-left` puts the campus image on the left. `centered` puts one panel in the middle |
 | Support email | `office@school.edu` | Shown in help |
 | SMS sender name | SSS School | Goes into the OTP text. Keep it short |
 | First admin name, email, phone | | This person receives the first login |
@@ -59,13 +59,10 @@ VALUES (
         'schoolName', :school_name,
         'shortName', :short_name,
         'place', :place,
-        'logoUrl', '/public/brand/logo',
+        'logoUrl', '/assets/' || :'tenant_id' || '/images/logo.jpeg',
         'faviconUrl', '/public/brand/favicon',
-        'theme', jsonb_build_object(
-            'primary', :primary,
-            'accent', :accent,
-            'background', '#F8FAFC'
-        ),
+        'theme', :'theme',
+        'layout', :'layout',
         'smsSenderName', :sms_sender_name,
         'supportEmail', :support_email
     )
@@ -177,20 +174,22 @@ No new nginx `server_name` line is required for `{slug}.swais.in` when the vhost
 
 Upload into the existing bucket. The key starts with the tenant id.
 
+The logo key is `{tenant_id}/images/logo.jpeg`. Locally the file is `public/assets/{tenant_id}/images/logo.jpeg`, and the page requests `/assets/{tenant_id}/images/logo.jpeg`. On the CDN the host is `https://assets.swais.in` and the key stays the same. Set `NEXT_PUBLIC_ASSETS_ORIGIN=https://assets.swais.in` for that. Leave it unset on a local machine.
+
 ```bash
-aws s3 cp logo.png "s3://${BUCKET}/${TENANT_ID}/brand/logo" \
-  --content-type image/png
+aws s3 cp logo.jpeg "s3://${BUCKET}/${TENANT_ID}/images/logo.jpeg" \
+  --content-type image/jpeg
 
 aws s3 cp favicon.png "s3://${BUCKET}/${TENANT_ID}/brand/favicon" \
   --content-type image/png
 ```
 
-The objects stay private. The site serves them through `/public/brand/logo` and `/public/brand/favicon`, which presign the object for the school in the host. Do not mark the objects public, and do not paste an `s3://` URI into `config`.
+Do not paste an `s3://` URI into `config`. The login page builds the logo URL from the tenant id.
 
 Check:
 
 ```bash
-aws s3api head-object --bucket "$BUCKET" --key "${TENANT_ID}/brand/logo"
+aws s3api head-object --bucket "$BUCKET" --key "${TENANT_ID}/images/logo.jpeg"
 ```
 
 ## Step 6 — First people and an empty academic year
@@ -293,7 +292,7 @@ SET status = 'active'
 WHERE tenant_id = :tenant_id;
 ```
 
-Watch the first real login. A 404 on the school's own host means the domain row is missing or the proxy dropped `Host`. A 403 means the school is still suspended. An empty brand image means the S3 key is not `{tenant_id}/brand/logo`.
+Watch the first real login. A 404 on the school's own host means the domain row is missing or the proxy dropped `Host`. A 403 means the school is still suspended. An empty brand image means the S3 key is not `{tenant_id}/images/logo.jpeg`.
 
 ## Suspend or remove a school
 
@@ -353,7 +352,7 @@ SGS and SSS are provisioned with this same checklist, once, as part of the conve
 | `smsSenderName` | SGS School | SSS School |
 | Isolation | `rls` | `rls` |
 | Rows | the existing SGS tables, backfilled with the SGS tenant id | the existing SSS tables, copied in with the SSS tenant id |
-| Logo | the file served today as `/assets/sgs-logo.png` and `public/sgslogo.jpeg`, uploaded to `{tenant_id}/brand/logo` | `school-logo.jpeg` from the headmaster app, and `SSS_logo.jpeg` from the student app if they differ. Pick one, upload it, and stop shipping both |
+| Logo | the file served today as `public/assets/sgs-logo.jpeg` and `public/sgslogo.jpeg`, uploaded to `{tenant_id}/images/logo.jpeg` | `school-logo.jpeg` from the headmaster app, and `SSS_logo.jpeg` from the student app if they differ. Pick one, upload it, and stop shipping both |
 
 Keep `staging.sss.swais.in` as a second row in `platform.tenant_domains` for the SSS tenant until every hardcoded link is gone and users have moved. Delete that extra domain row when step 7 on `sss.swais.in` passes and nobody is using the staging host.
 

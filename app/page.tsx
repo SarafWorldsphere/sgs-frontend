@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { SchoolBrand } from "@saraswati/tenant-kit";
 import { getDashboardUrl, getAllRoles } from '@/lib/role-mapping';
+import { LoginSurface } from "./layouts";
 
 // Disable prerendering for login page
 export const dynamic = 'force-dynamic';
@@ -351,40 +351,16 @@ export default function Home() {
   };
 
   return (
-    <main className="login-page">
-      <div className="scene">
-        {/* Brand / campus side */}
-        <section className="hero" aria-label="SGS Portal">
-          <div className="hero-inner">
-            <SchoolBrand />
-            <p className="hero-tag">
-              Your all-in-one AI-powered school portal for students, teachers,
-              parents, and administration.
-            </p>
-            <div className="hero-badges">
-              <span className="hero-badge"><ShieldIcon />Secure Portal</span>
-              <i className="badge-sep" aria-hidden="true" />
-              <span className="hero-badge"><BoltIcon />AI-Powered</span>
-            </div>
-          </div>
-          <p className="hero-motto" aria-hidden="true">
-            Learn <b>&middot;</b> Grow <b>&middot;</b> Build a Better Tomorrow
-          </p>
-        </section>
-
-        {/* Form card side */}
-        <div className="form-side">
-        <form 
-          className="card" 
-          aria-labelledby="welcome-heading" 
-          onSubmit={(e) => { 
-            e.preventDefault(); 
-            isOtpStep ? handleVerifyOtp() : handleLogin(); 
+    <LoginSurface>
+        <form
+          className="login-card"
+          onSubmit={(e) => {
+            e.preventDefault();
+            isOtpStep ? handleVerifyOtp() : handleLogin();
           }}
         >
-          <span className="wave" aria-hidden="true">👋</span>
-          <h2 className="welcome-heading" id="welcome-heading">Welcome Back!</h2>
-          <p className="welcome-sub">Sign in to access your account</p>
+          <div className="form-inner">
+          <p className="section-title">Sign in with</p>
 
           {/* DYNAMIC FORM RENDERING BASED ON isOtpStep */}
           {!isOtpStep ? (
@@ -526,7 +502,7 @@ export default function Home() {
 
               <p className="administrator">
                 <ShieldIcon />
-                Don&apos;t have an account? <strong>Contact SWAIS administrator</strong>
+                Don&apos;t have an account? <strong>Contact your administrator</strong>
               </p>
             </>
           ) : (
@@ -584,17 +560,8 @@ export default function Home() {
               </div>
             </>
           )}
+          </div>
         </form>
-        </div>
-      </div>
-
-      <footer className="page-footer">
-        <span>&copy; 2026 SGS Portal. All rights reserved.</span>
-        <i aria-hidden="true">|</i>
-        <span className="footer-link">Privacy Policy</span>
-        <i aria-hidden="true">|</i>
-        <span className="footer-link">Terms of Use</span>
-      </footer>
-    </main>
+    </LoginSurface>
   );
 }

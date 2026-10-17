@@ -129,7 +129,7 @@ from saraswati_tenant import (
 
 `apply_rls(db)` is the same `set_config` call for a SQLAlchemy session, used inside the existing `get_db` helpers.
 
-`build_key("brand", "logo")` returns `{tenant_id}/brand/logo`. `s3_path_validator(key, tenant_id)` accepts that key only when it starts with `{tenant_id}/`. There is no allowlist of older prefixes.
+`build_key("images", "logo.jpeg")` returns `{tenant_id}/images/logo.jpeg`. `s3_path_validator(key, tenant_id)` accepts that key only when it starts with `{tenant_id}/`. There is no allowlist of older prefixes.
 
 `SchoolMiddleware` is the single layer. `get_db` and `get_connection` call `open_school_session()` or `apply_rls()`. They do not parse the host.
 
@@ -139,9 +139,13 @@ The domain lookup uses `SARASWATI_CONTROL_DATABASE_URL` (or the shared URL) and 
 
 ### JavaScript package `@saraswati/tenant-kit`
 
-`TenantProvider`, `useSchool`, `SchoolBrand`, and `loadSchoolConfig` are exported from the package. `SchoolConfig` is `tenantId`, `slug`, `schoolName`, `shortName`, `place`, `logoUrl`, `faviconUrl`, `theme`, `smsSenderName`, and `supportEmail`.
+`TenantProvider`, `useSchool`, `SchoolBrand`, `loadSchoolConfig`, `themeName`, and `schoolLogo` are exported from the package. `resolveTenant` and `publicSchoolConfig` are exported from `@saraswati/tenant-kit/resolve`, so a client page does not load the database driver. `SchoolConfig` is `tenantId`, `slug`, `schoolName`, `shortName`, `place`, `logoUrl`, `faviconUrl`, `theme`, `layout`, `smsSenderName`, and `supportEmail`.
 
-`TenantProvider` sets `--school-primary`, `--school-accent`, and `--school-background` from `config.theme`.
+`resolveTenant(host)` reads `platform.tenant_domains` through `SARASWATI_DATABASE_URL`. It strips the port and lowercases the host. Each server process keeps that domain's result for one hour (`TENANT_CACHE_MS`), then reads the database again. An unknown host returns null and is kept for the same hour. `publicSchoolConfig(tenantId)` returns that school's public JSON and omits the database secret. `schoolLogo(tenantId)` is `/assets/{tenantId}/images/logo.jpeg`. With `NEXT_PUBLIC_ASSETS_ORIGIN` set, the same key is served from that origin.
+
+`theme` is a color name: `indigo-classic`, `bright-blue`, or `plain-card`. `layout` is a screen arrangement: `image-left` or `centered`. An unknown theme name uses `indigo-classic`. An unknown layout name uses `image-left`.
+
+`TenantProvider` sets `data-theme` on the document from `config.theme`. The theme stylesheet (`@saraswati/tenant-kit/themes.css`) sets `--school-primary`, `--school-accent`, and `--school-background` for that name. Import the stylesheet from the app layout. Layout files live in the app (`app/layouts/<layout>/login.tsx` and `inside.tsx`) and read `config.layout`.
 
 `SchoolBrand` renders `config.logoUrl` and `config.schoolName`. It does not accept a school name prop. Callers pass only a subtitle such as `"Faculty"` or `"Headmaster Dashboard"`.
 
@@ -168,13 +172,10 @@ That runs `src/` first (table definitions and indexes), then `migrations/`. The 
   "schoolName": "Shiva Satya Sai School",
   "shortName": "SSS",
   "place": "",
-  "logoUrl": "/public/brand/logo",
+  "logoUrl": "/assets/{tenant_id}/images/logo.jpeg",
   "faviconUrl": "/public/brand/favicon",
-  "theme": {
-    "primary": "#0F172A",
-    "accent": "#6366F1",
-    "background": "#F8FAFC"
-  },
+  "theme": "indigo-classic",
+  "layout": "image-left",
   "smsSenderName": "SSS School",
   "supportEmail": ""
 }
@@ -292,47 +293,25 @@ def get_connection():
         yield connection
 ```
 
-A Next.js module has no `SchoolMiddleware` in the JavaScript package, so the same two calls are three files. `lib/school.ts` is the only lookup. `proxy.ts` is the only `Host` read. `lib/db.ts` sets `app.tenant_id` and does not read `Host`.
+A Next.js module has no `SchoolMiddleware` in the JavaScript package. `proxy.ts` is the only `Host` read, and it calls `resolveTenant` from the kit. `lib/db.ts` sets `app.tenant_id` and does not read `Host`. Do not copy the lookup SQL into the app.
 
-`proxy.ts` deletes `x-saraswati-tenant-id` before it sets the id it just resolved. A value sent by the browser does not survive that delete. `lib/db.ts` reads the header the proxy set. `set_config(..., true)` is transaction-local, so the helper opens a transaction, sets the id, runs the caller's SQL, then commits.
-
-```typescript
-// lib/school.ts
-import { Pool } from "pg";
-
-const pool = new Pool({ connectionString: process.env.SARASWATI_DATABASE_URL });
-
-export type ResolvedSchool = { tenantId: string; status: string };
-
-export async function resolveSchool(host: string): Promise<ResolvedSchool | null> {
-  const domain = host.trim().toLowerCase().replace(/\.$/, "").split(":")[0];
-  if (!domain || domain.includes("/")) return null;
-  const result = await pool.query(
-    `SELECT t.tenant_id::text AS "tenantId", t.status
-     FROM platform.tenant_domains AS d
-     JOIN platform.tenants AS t ON t.tenant_id = d.tenant_id
-     WHERE d.domain = $1`,
-    [domain],
-  );
-  return result.rows[0] ?? null;
-}
-```
+`proxy.ts` deletes `x-saraswati-tenant-id` before it sets the id it just resolved. A value sent by the browser does not survive that delete. `lib/db.ts` reads the header the proxy set. `set_config(..., true)` is transaction-local, so the helper opens a transaction, sets the id, runs the caller's SQL, then commits. `GET /public/tenant-config` calls `publicSchoolConfig` from the kit. A logo uses `schoolLogo` from the kit.
 
 ```typescript
 // proxy.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { resolveSchool } from "@/lib/school";
+import { resolveTenant } from "@saraswati/tenant-kit/resolve";
 
 const TENANT_HEADER = "x-saraswati-tenant-id";
 
 export const proxy = auth(async (request) => {
-  const school = await resolveSchool(request.headers.get("host") ?? "");
-  if (!school) return new NextResponse(null, { status: 404 });
-  if (school.status !== "active") return new NextResponse(null, { status: 403 });
+  const tenant = await resolveTenant(request.headers.get("host") ?? "");
+  if (!tenant) return new NextResponse(null, { status: 404 });
+  if (tenant.status !== "active") return new NextResponse(null, { status: 403 });
   const headers = new Headers(request.headers);
   headers.delete(TENANT_HEADER);
-  headers.set(TENANT_HEADER, school.tenantId);
+  headers.set(TENANT_HEADER, tenant.tenantId);
   return NextResponse.next({ request: { headers } });
 });
 ```
@@ -371,7 +350,7 @@ While you are in `lib/db.ts`, delete the fallback host, user, password, and data
 
 Also delete the default database URL `mydb_sgs` in `sgs-parent-module/backend/database.py`. The school is no longer implied by the database name.
 
-The FastAPI block above is the `main.py` and the connection helper for the five Python apps. Branch `saas` in this repo already contains the Next.js block: `lib/school.ts`, `proxy.ts`, `lib/db.ts`, the role-table rename, `GET /public/tenant-config`, and `SchoolBrand` on the login page. The block stays here so another Next.js app can copy that shape.
+The FastAPI block above is the `main.py` and the connection helper for the five Python apps. Branch `saas` in this repo already contains the Next.js block: `proxy.ts`, `lib/db.ts`, the role-table rename, and `GET /public/tenant-config`. The host lookup and the logo URL come from the kit.
 
 Login queries in `lib/role-mapping.ts` keep their table and column names. After the rename they point at `users_masters`, `teacher_master`, `student_master`, and `parent_master`. RLS limits the lookup to the school in the host. You do not add a tenant parameter to `getRoleMapping`.
 
@@ -459,7 +438,7 @@ Every object, including a file that sits at the bucket root today, starts with t
 {tenant_id}/chapters/class-{class_id}/subject-{subject_id}/chapter-{chapter_id}/{file}
 {tenant_id}/admin/students/{student_id}/student/{file}
 {tenant_id}/admin/parents/{parent_id}/profile/{file}
-{tenant_id}/brand/logo
+{tenant_id}/images/logo.jpeg
 {tenant_id}/brand/favicon
 ```
 
@@ -497,7 +476,7 @@ Do the copy in the repository in the **Change this** column. The frozen reposito
 | Student | `chapters/...` if a row already points at one. The SGS listing has none. | `sss_chapter_content.pdf_url` (`chapter_content.pdf_url` after the rename), an `s3://` URI. | `sgs-student-module`, when you port `POST /chapter-pdf` from `sss_student/backend/main.py`. |
 | Student submissions | No S3 object. The file bytes are in Postgres. | `submitted_file_content` in `sgs-student-module/backend/main.py`. | Leave the bytes. New submissions use `build_key("assignments", ...)` and store an `s3://` URI in the same shape faculty already uses. |
 | Parent | None. It presigns the faculty row. | Reads `sgs_file_storage_metadata.file_url`. `student_submission.file_path` is text the parent app stores for a submission; if that value is an S3 key, prepend the tenant id in the same pass. | `sgs-parent-module/backend/s3_utils.py`. Call `s3_path_validator` on the key you just read. |
-| Login / brand | No object yet. | `platform.tenants.config`: `logoUrl` is the path `/public/brand/logo`, not an S3 URI. | This repo, plus the upload in [02-school-provisioning.md](./02-school-provisioning.md). |
+| Login / brand | No object yet. | Logo key `{tenant_id}/images/logo.jpeg`. Locally `/assets/{tenant_id}/images/logo.jpeg`. On the CDN, `https://assets.swais.in/{tenant_id}/images/logo.jpeg`. | This repo, plus the upload in [02-school-provisioning.md](./02-school-provisioning.md). |
 
 ### How each module copies
 
@@ -583,7 +562,7 @@ Student chapter PDFs, only if `pdf_url` points at an unprefixed `chapters/` key.
 - Call `s3_path_validator(key, current_school().tenant_id)` before `generate_presigned_url`. An unprefixed key raises `TenantKeyError`.
 - Faculty and student clients already send the file to the API, and the API calls `put_object`. Keep it that way. Do not hand the browser a bucket credential.
 
-Brand images are not stored as expiring URLs inside `config`. `config.logoUrl` is the path `/public/brand/logo`. That route calls `resolve_school`, then presigns `{tenant_id}/brand/logo`, and redirects. The JSON can be cached. The presign cannot.
+The logo URL is built from the tenant id. Locally it is `/assets/{tenant_id}/images/logo.jpeg`. With `NEXT_PUBLIC_ASSETS_ORIGIN=https://assets.swais.in` it is `https://assets.swais.in/{tenant_id}/images/logo.jpeg`. The key is the same in both places.
 
 ## Step 7 — Render the school from JSON
 
@@ -613,10 +592,7 @@ Replace the hardcoded brand in these places with `<SchoolBrand subtitle="..." />
 | Admin shell | `sss-admin-dashboard/sss-admin-frontend/components/layout/AdminShell.js` | `NEXT_PUBLIC_SCHOOL_NAME` default `"SSS School"` |
 | Admin copy | `sss-admin-frontend/app/admin/components/students/Students.jsx` | "SSS School" in the subtitle |
 
-Map existing colors onto the variables instead of new one-off hex values:
-
-- Faculty sidebar background `#0F172A` and accent `#6366F1` become `var(--school-primary)` and `var(--school-accent)`.
-- Those hex values move into the SGS and SSS `config.theme` rows, so the first two schools look the same on day one.
+Map existing colors onto the variables. Faculty sidebar background and accent use `var(--school-primary)` and `var(--school-accent)`. The hex values live in the theme CSS file named by `config.theme`. SSS uses `indigo-classic` with `image-left`. SGS uses `bright-blue` with `image-left`. A centered single-panel school such as JCLG uses `plain-card` with `centered`.
 
 Logout from every module goes to `/` on the current host. Delete `NEXT_PUBLIC_SCHOOL_NAME`, `logout_redirect_url` default `https://staging.sss.swais.in/`, and any other absolute staging host. This login app's `dashboardUrls` in `lib/role-mapping.ts` already fall back to relative paths. Keep that. Set the env overrides to relative paths too.
 
