@@ -113,6 +113,7 @@ npm install "git+https://github.com/SarafWorldsphere/saraswati-tenant-kit.git#ma
 from saraswati_tenant import (
     SchoolMiddleware,
     apply_rls,
+    bind_rls,
     s3_path_validator,
     build_key,
     current_school,
@@ -127,13 +128,13 @@ from saraswati_tenant import (
 
 `open_school_session()` opens the psycopg connection for that school and sets `app.tenant_id` for the transaction. `isolation = 'rls'` uses `SARASWATI_DATABASE_URL`. `isolation = 'database'` uses the URL mapped from `database_secret` in `SARASWATI_DATABASE_SECRETS`. Both modes set `app.tenant_id`, because both databases run the same row-level security migration.
 
-`apply_rls(db)` is the same `set_config` call for a SQLAlchemy session, used inside the existing `get_db` helpers.
+`apply_rls(db)` is the same `set_config` call for a SQLAlchemy session, used inside the existing `get_db` helpers. `bind_rls(SessionLocal)` is called once next to the sessionmaker. It runs that same call at the start of every transaction, so a module that commits once and a module that commits many times stay on the right school.
 
 `build_key("images", "logo.jpeg")` returns `{tenant_id}/images/logo.jpeg`. `s3_path_validator(key, tenant_id)` accepts that key only when it starts with `{tenant_id}/`. There is no allowlist of older prefixes.
 
 `SchoolMiddleware` is the single layer. `get_db` and `get_connection` call `open_school_session()` or `apply_rls()`. They do not parse the host.
 
-`set_config(..., true)` lasts for the current transaction. The sessionmakers already use `autocommit=False`. If a handler calls `commit()` and then runs more SQL, call `apply_rls` again before the next statement. Do not use `set_config(..., false)` on a pooled connection. That sticks to the connection and the next request can inherit the previous school.
+`set_config(..., true)` lasts for the current transaction. The sessionmakers already use `autocommit=False`. `bind_rls(SessionLocal)` sets the school again when the next transaction begins, including after a commit. Do not use `set_config(..., false)` on a pooled connection. That sticks to the connection and the next request can inherit the previous school.
 
 The domain lookup uses `SARASWATI_CONTROL_DATABASE_URL` (or the shared URL) and reads only `platform`. It runs before `app.tenant_id` is set. The app role can `SELECT` that schema and cannot `INSERT` into it.
 
@@ -272,14 +273,15 @@ Replace the body of the existing helper. Do not open a second engine in a router
 
 Each module does these two things and writes no other tenant logic. The first call reads `Host`. The second call sets `app.tenant_id` on the connection the module already opens. A page, a router, and a SQL string do not read `Host`.
 
-A FastAPI module (faculty, student, parent, headmaster, admin) adds the middleware in `main.py` and calls one helper inside the `get_db` or `get_connection` it already has. `SchoolMiddleware` is the `Host` read. `apply_rls` is the SQLAlchemy form. `open_school_session` is the raw-connection form. Use the one that matches the file in the table.
+A FastAPI module (faculty, student, parent, headmaster, admin) adds the middleware in `main.py` and calls one helper inside the `get_db` or `get_connection` it already has. `SchoolMiddleware` is the `Host` read. `apply_rls` is the SQLAlchemy form. `bind_rls(SessionLocal)` is called once next to the sessionmaker. `open_school_session` is the raw-connection form. Use the one that matches the file in the table.
 
 ```python
 from fastapi import FastAPI
-from saraswati_tenant import SchoolMiddleware, apply_rls, open_school_session
+from saraswati_tenant import SchoolMiddleware, apply_rls, bind_rls, open_school_session
 
 app = FastAPI()
 app.add_middleware(SchoolMiddleware)
+bind_rls(SessionLocal)
 
 def get_db():
     db = SessionLocal()
@@ -615,7 +617,7 @@ Add these before calling the conversion done. They are the acceptance tests.
 
 ## Order of work
 
-Do it in this order. Later steps assume the earlier ones.
+Do it in this order. Later steps assume the earlier ones. The pending rows, owners, hours, and dates are in [04-pending-tasks.md](./04-pending-tasks.md).
 
 1. Feature ports listed at the top (student chapter upload, assignments, assessments; parent dashboard and voice).
 2. Depend on `saraswati-tenant-kit`. The resolver, `open_school_session`, the S3 key helper, and `SchoolBrand` are already there. Apply `src/` and then `migrations/` with `scripts/apply.sh`.
