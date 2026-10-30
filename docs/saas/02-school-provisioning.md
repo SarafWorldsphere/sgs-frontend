@@ -16,8 +16,10 @@ Fill this in before touching the database. The slug is permanent. Use lowercase 
 | Slug | `sss` | Becomes `{slug}.swais.in` |
 | Custom domain | `portal.school.edu` | Optional. Leave blank to use only `{slug}.swais.in` |
 | Isolation | `rls` or `database` | `rls` puts the school in the shared database. `database` creates a separate Postgres database. Default is `rls` |
-| Theme | `indigo-classic` | Color name. Also `bright-blue` or `plain-card` |
-| Layout | `image-left` | Screen arrangement. `image-left` puts the campus image on the left. `centered` puts one panel in the middle |
+| Theme | `indigo-classic` | Color name. Also `bright-blue`, `plain-card`, or `saffron` |
+| Default language | `en` | Language shown on first load. A code from the catalog: `en`, `hi`, `te`, `ta`, `kn`, `ml`, `mr`, `gu`, `bn`, `or` |
+| Enabled languages | all of them | Optional shorter list. The default language is always kept |
+| Layout | `image-left` | Screen arrangement. `image-left` puts the campus image on the left. `centered` puts one panel in the middle. `saffron` keeps the login form and shows `public/login/{slug}-login.html`, or `public/login/default.html` when that file is absent |
 | Support email | `office@school.edu` | Shown in help |
 | SMS sender name | SSS School | Goes into the OTP text. Keep it short |
 | First admin name, email, phone | | This person receives the first login |
@@ -64,12 +66,28 @@ VALUES (
         'theme', :'theme',
         'layout', :'layout',
         'smsSenderName', :sms_sender_name,
-        'supportEmail', :support_email
+        'supportEmail', :support_email,
+        'defaultLanguage', :default_language
     )
 );
 ```
 
 Status stays `active` only after step 8 passes. If you are preparing the school before DNS is ready, insert it as `suspended` and set `active` at the end. A suspended school resolves the host and then returns HTTP 403, so nobody can use a half-built school.
+
+`:enabled_languages` is a JSON array, for example `'["en","hi","te"]'::jsonb`. Leave `defaultLanguage` as `en` and omit `enabledLanguages` when the school should offer every catalog language. Vidya Bharati uses Hindi as the default and a shorter list:
+
+```sql
+-- config.defaultLanguage = 'hi'
+-- config.enabledLanguages = '["hi","en","te"]'::jsonb
+
+INSERT INTO platform.tenant_labels (tenant_id, label_key, locale, value)
+VALUES (:tenant_id, 'module.student', 'hi', 'विद्यार्थी');
+
+INSERT INTO platform.tenant_features (tenant_id, feature_key, enabled)
+VALUES (:tenant_id, 'library', true);
+```
+
+Set `layout` to `saffron` when this school should show the welcome panel. Add `public/login/{slug}-login.html` in the login app only when the words differ from `public/login/default.html`. A label row replaces one module name for one language. Skip the insert when the catalog name is already right. A feature row is only needed to change the catalog default. `library` stays off until that row exists. Do not insert rows for `student`, `faculty`, `parent`, `headmaster`, or `admin` unless this school should hide one of them.
 
 ## Step 2 — Attach the domain
 

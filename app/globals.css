@@ -253,6 +253,16 @@ input:disabled {
   position: relative;
 }
 
+.input-wrap select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
 .input-wrap,
 .select-box {
   width: 100%;
@@ -532,6 +542,115 @@ input:disabled {
   font-size: 24px;
 }
 
+.saffron-login {
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.9fr);
+}
+
+.saffron-login .form-panel {
+  order: 1;
+}
+
+.saffron-panel {
+  --saffron: #f28c28;
+  --saffron-deep: #c0562a;
+  --serif: Fraunces, "Iowan Old Style", Palatino, serif;
+  --dev: "Noto Sans Devanagari", sans-serif;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  color: #fff;
+  padding: clamp(36px, 4vw, 52px) clamp(28px, 3vw, 46px);
+  background: linear-gradient(160deg, #f49b45 0%, #e97c24 40%, var(--saffron-deep) 100%);
+  display: flex;
+  flex-direction: column;
+  border-radius: 26px 0 0 26px;
+}
+
+.saffron-panel .r-pill {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  position: relative;
+  z-index: 2;
+}
+
+.saffron-panel .shloka {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: clamp(30px, 4vw, 44px);
+  line-height: 1.15;
+  margin-top: 22px;
+  position: relative;
+  z-index: 2;
+}
+
+.saffron-panel .dev {
+  font-family: var(--dev);
+}
+
+.saffron-panel .trans {
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.6;
+  opacity: 0.94;
+  max-width: 400px;
+  position: relative;
+  z-index: 2;
+}
+
+.saffron-panel .kosha {
+  list-style: none;
+  margin: clamp(28px, 4vw, 42px) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  z-index: 2;
+}
+
+.saffron-panel .krow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.saffron-panel .kbar {
+  width: 34px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  flex: none;
+}
+
+.saffron-panel .sk {
+  font-weight: 700;
+  font-size: 19px;
+}
+
+.saffron-panel .k-en {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 3px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.saffron-panel .r-foot {
+  margin-top: auto;
+  padding-top: 28px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  opacity: 0.85;
+  position: relative;
+  z-index: 2;
+}
+
 @media (max-width: 980px) {
   .login-page {
     grid-template-columns: 1fr;
@@ -547,11 +666,27 @@ input:disabled {
     padding: 48px 24px 220px;
   }
 
+  .saffron-login {
+    grid-template-columns: 1fr;
+  }
+
+  .saffron-panel {
+    order: 2;
+    min-height: auto;
+    border-radius: 0;
+  }
+
   .form-panel {
     padding: 28px 18px 36px;
   }
 
   .form-inner {
     padding: 32px 22px 28px;
+  }
+}
+
+@media (max-width: 600px) {
+  .saffron-panel {
+    display: none;
   }
 }

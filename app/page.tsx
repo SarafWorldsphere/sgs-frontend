@@ -2,8 +2,35 @@
 
 import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
+import { useSchool } from "@saraswati/tenant-kit";
 import { getDashboardUrl, getAllRoles } from '@/lib/role-mapping';
 import { LoginSurface } from "./layouts";
+
+const LOGIN_ROLE_FEATURES: Record<string, string> = {
+  "School Admin": "admin",
+  Headmaster: "headmaster",
+  Faculty: "faculty",
+  Student: "student",
+  Parent: "parent",
+};
+
+const LOGIN_ROLE_LABELS: Record<string, string> = {
+  "School Admin": "module.admin",
+  Headmaster: "module.headmaster",
+  Faculty: "module.faculty",
+  Student: "module.student",
+  Parent: "module.parent",
+};
+
+type SchoolCatalog = {
+  features?: Record<string, boolean>;
+  languages?: {
+    default: string;
+    enabled: string[];
+    names?: Record<string, string>;
+  };
+  labels?: Record<string, Record<string, string>>;
+};
 
 // Disable prerendering for login page
 export const dynamic = 'force-dynamic';
@@ -169,10 +196,30 @@ async function validateUserPhone(phone: string, role: string): Promise<{ isValid
 // ============================================
 
 export default function Home() {
-  const roles = ["School Admin", "Headmaster", "Faculty", "Student", "Parent"];
-  
+  const school = useSchool() as ReturnType<typeof useSchool> & SchoolCatalog;
+  const defaultLanguage = school.languages?.default ?? "en";
+  const enabledLanguages = school.languages?.enabled?.length
+    ? school.languages.enabled
+    : [defaultLanguage];
+  const languageNames = school.languages?.names ?? {};
+  const roles = getAllRoles().filter((role) => {
+    const feature = LOGIN_ROLE_FEATURES[role];
+    if (!feature) return false;
+    return school.features?.[feature] !== false;
+  });
+
   const [loginMethod, setLoginMethod] = useState<"email" | "phone">("email");
+  const [selectedLanguage, setSelectedLanguage] = useState(defaultLanguage);
   const [selectedRole, setSelectedRole] = useState("Select your role");
+  const activeLanguage = enabledLanguages.includes(selectedLanguage)
+    ? selectedLanguage
+    : defaultLanguage;
+
+  function labelFor(role: string): string {
+    const key = LOGIN_ROLE_LABELS[role];
+    const labels = school.labels?.[activeLanguage] ?? school.labels?.[defaultLanguage];
+    return (key && labels?.[key]) || role;
+  }
   const [isRoleOpen, setIsRoleOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -440,6 +487,24 @@ export default function Home() {
                 </label>
               )}
 
+              <label className="field-group">
+                <span>Language</span>
+                <span className="input-wrap">
+                  <select
+                    aria-label="Language"
+                    value={activeLanguage}
+                    disabled={isLoading || enabledLanguages.length < 2}
+                    onChange={(event) => setSelectedLanguage(event.target.value)}
+                  >
+                    {enabledLanguages.map((code) => (
+                      <option key={code} value={code}>
+                        {languageNames[code] ?? code}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </label>
+
               <div className="field-group role-dropdown" ref={roleDropdownRef}>
                 <span>
                   Select Role <strong className="required-marker">*</strong>
@@ -454,7 +519,7 @@ export default function Home() {
                   <span className="select-label">
                     <UsersIcon />
                     <span id="selectedRole" className={selectedRole === "Select your role" ? "is-placeholder" : ""}>
-                      {selectedRole === "Select your role" ? "Choose your role" : selectedRole}
+                      {selectedRole === "Select your role" ? "Choose your role" : labelFor(selectedRole)}
                     </span>
                   </span>
                   <ChevronIcon />
@@ -473,7 +538,7 @@ export default function Home() {
                           setIsRoleOpen(false);
                         }}
                       >
-                        {role}
+                        {labelFor(role)}
                       </button>
                     ))}
                   </div>
