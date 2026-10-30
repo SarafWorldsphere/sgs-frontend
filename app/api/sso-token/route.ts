@@ -50,11 +50,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ access_token: null });
     }
 
+    // The backend decides which school a request belongs to from its Host
+    // header. These URLs come from the environment and point at a port on
+    // localhost, so without this the backend sees `Host: 127.0.0.1:4106`,
+    // resolves no school, and answers 404 — the same for every school.
+    //
+    // Forwarding the host the browser used is what makes one deployment work
+    // for several schools. An environment variable cannot do it: it holds one
+    // value, and there is more than one school.
+    const schoolHost = req.headers.get('host');
+
     const res = await fetch(target.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-SSO-Secret': process.env.SGS_SSO_SECRET || '',
+        ...(schoolHost ? { Host: schoolHost } : {}),
       },
       // Pass both email and phone; the backend will use whichever is populated
       body: JSON.stringify({ email, phone, role }),
