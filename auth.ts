@@ -96,21 +96,66 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     error: "/",
   },
   callbacks: {
-    signIn({ account, profile }) {
+    async signIn({ account, profile, user }) {
       if (account?.provider === "phone-otp") return true;
       if (account?.provider !== "google") return false;
 
-      const email =
-        typeof profile?.email === "string" ? profile.email.toLowerCase() : "";
+      const email = typeof profile?.email === "string" ? profile.email.toLowerCase() : "";
       const isVerified = profile?.email_verified !== false;
+      const isValid = isVerified && email.endsWith("@gmail.com");
 
-      return isVerified && email.endsWith("@gmail.com");
+      // --- GUARANTEED GOOGLE LOGIN TRACKING ---
+      if (isValid) {
+        try {
+          const actualUserId = String(email || user?.id || "UNKNOWN");
+          const sessionId = String(Date.now()); 
+          
+          await withClient(async (client) => {
+            // SQL fix: 4 parameters passed for 4 placeholders ($1, $2, $3, $4)
+            await client.query(
+              `INSERT INTO sgs_user_activity_logs 
+               (user_id, user_role, session_id, module_name, activity_type, login_method) 
+               VALUES ($1, $2, $3, '/dashboard', 'login', $4)`,
+              [actualUserId, "google_user", sessionId, "google"]
+            );
+          });
+          console.log("✅ Google login tracked in database successfully.");
+        } catch (error) {
+          console.error("❌ Failed to insert Google login tracking log:", error);
+        }
+      }
+      // ------------------------------------------
+
+      return isValid;
     },
-    jwt({ token, user }) {
-      if (user) {
+    async jwt({ token, user, account }) {
+      if (user && account) {
         const phoneUser = user as typeof user & { phone?: string; role?: string };
         token.phone = phoneUser.phone;
         token.role = phoneUser.role;
+
+        // --- PHONE OTP LOGIN TRACKING ---
+        if (account.provider === "phone-otp") {
+          try {
+            const actualUserId = String(user.id || user.phone || "UNKNOWN");
+            const userRole = phoneUser.role ? String(phoneUser.role) : "unknown";
+            const sessionId = token.jti ? String(token.jti) : String(Date.now());
+            
+            await withClient(async (client) => {
+              // SQL fix: 4 parameters passed for 4 placeholders ($1, $2, $3, $4)
+              await client.query(
+                `INSERT INTO sgs_user_activity_logs 
+                 (user_id, user_role, session_id, module_name, activity_type, login_method) 
+                 VALUES ($1, $2, $3, '/dashboard', 'login', $4)`,
+                [actualUserId, userRole, sessionId, "phone-otp"]
+              );
+            });
+            console.log("✅ Phone login tracked in database successfully.");
+          } catch (error) {
+            console.error("❌ Failed to insert Phone login tracking log:", error);
+          }
+        }
+        // ------------------------------------------
       }
       return token;
     },

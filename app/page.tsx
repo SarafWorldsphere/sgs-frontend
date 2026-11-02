@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { getDashboardUrl, getAllRoles } from '@/lib/role-mapping';
 
 // Disable prerendering for login page
@@ -183,6 +183,23 @@ export default function Home() {
   const [isOtpStep, setIsOtpStep] = useState(false);
   const [otpCode, setOtpCode] = useState("");
 
+  // ============================================
+  // FORCE CACHE WIPE ON MOUNT
+  // ============================================
+  useEffect(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    
+    // Check if a NextAuth session cookie exists. If it does, forcefully destroy it
+    // without redirecting, so the user stays on the login page with a blank slate.
+    const hasNextAuthCookie = document.cookie.includes('next-auth.session-token') || 
+                              document.cookie.includes('__Secure-next-auth.session-token');
+    if (hasNextAuthCookie) {
+      signIn(undefined, { redirect: false }); 
+      signOut({ redirect: false });           
+    }
+  }, []);
+
   // Handle outside click for dropdown
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -244,16 +261,17 @@ export default function Home() {
           if (data.access_token) {
             window.location.href = `${dashboardUrl}?token=${data.access_token}`;
           } else {
-            window.location.href = dashboardUrl;
+            // Use native NextAuth router fallback for clean session state
+            await signIn(undefined, { callbackUrl: dashboardUrl, redirect: true });
           }
         } else {
           // Fallback if the token generation fails
           console.warn("SSO token generation failed. Redirecting without token.");
-          window.location.href = dashboardUrl;
+          await signIn(undefined, { callbackUrl: dashboardUrl, redirect: true });
         }
       } catch (error) {
         console.error("Error generating SSO token:", error);
-        window.location.href = dashboardUrl;
+        await signIn(undefined, { callbackUrl: dashboardUrl, redirect: true });
       }
     }
   };
