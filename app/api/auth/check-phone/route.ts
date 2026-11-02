@@ -107,26 +107,36 @@ export async function POST(request: NextRequest) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     await withClient(async (client) => {
-      // 1. Auto-create the OTP table if it doesn't exist
+      // The table is part of the tenant kit's schema, applied by
+      // scripts/apply.sh. Creating it here fails anyway: the app role has no
+      // rights to create tables, and a table created at runtime would have no
+      // tenant_id and so sit outside row-level security entirely.
+      //
+      // tenant_id is left out of the insert on purpose — the stamp_tenant
+      // trigger fills it from the school bound to this request. The unique key
+      // is (tenant_id, phone, role), not phone alone, because the same phone
+      // number can belong to a person at two different schools.
       await client.query(`
-        CREATE TABLE IF NOT EXISTS otp_verifications (
-          phone VARCHAR(20) PRIMARY KEY,
-          otp VARCHAR(6) NOT NULL,
-          expires_at TIMESTAMP NOT NULL
-        )
-      `);
-      
-      // 2. Save/Update the OTP for this phone number
-      await client.query(`
-        INSERT INTO otp_verifications (phone, otp, expires_at)
-        VALUES ($1, $2, NOW() + INTERVAL '10 minutes')
-        ON CONFLICT (phone) DO UPDATE SET otp = $2, expires_at = NOW() + INTERVAL '10 minutes'
-      `, [phone.trim(), otp]);
+        INSERT INTO otp_verifications (phone, role, otp, expires_at)
+        VALUES ($1, $2, $3, NOW() + INTERVAL '10 minutes')
+        ON CONFLICT ON CONSTRAINT otp_verifications_phone_role_key
+        DO UPDATE SET otp = $3, expires_at = NOW() + INTERVAL '10 minutes'
+      `, [phone.trim(), role, otp]);
     });
 
     // 3. Send SMS via Nimbus
     const smsResult = await sendOtpSms(phone.trim(), otp);
-    
+
+    if (!smsResult.success && process.env.NODE_ENV !== "production") {
+      // LOCAL ONLY — no SMS gateway on a laptop. Print it instead of failing.
+      console.log(`\n  OTP for ${phone.trim()} (${role}): ${otp}\n`);
+      return NextResponse.json({
+        valid: true,
+        message: "OTP generated (check the server terminal)",
+        user: result.rows[0],
+      });
+    }
+
     if (!smsResult.success) {
       return NextResponse.json(
         { valid: false, message: 'Failed to send OTP via SMS. Please try again.' },
