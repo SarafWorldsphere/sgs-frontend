@@ -137,7 +137,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // --- PHONE OTP LOGIN TRACKING ---
         if (account.provider === "phone-otp") {
           try {
-            const actualUserId = String(user.id || user.phone || "UNKNOWN");
+            // phoneUser, not user: `phone` is not on next-auth's User type, so
+            // reading it off the uncast value fails the build. The cast two
+            // lines above already carries it.
+            const actualUserId = String(user.id || phoneUser.phone || "UNKNOWN");
             const userRole = phoneUser.role ? String(phoneUser.role) : "unknown";
             const sessionId = token.jti ? String(token.jti) : String(Date.now());
             
