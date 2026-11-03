@@ -18,7 +18,10 @@ const ROLE_DASHBOARD_MAP: Record<string, string> = {
 };
 
 // Roles whose dashboard consumes a signed SSO token from the redirect URL.
-const SSO_ROLES = new Set(['Faculty', 'Parent']);
+// School Admin joined this list once the admin dashboard gained an sso-token
+// endpoint and middleware that requires a token: before that it arrived with
+// nothing, was bounced straight back here, and looked like a login loop.
+const SSO_ROLES = new Set(['Faculty', 'Parent', 'School Admin']);
 
 export default function DashboardPage() {
   const router = useRouter();
