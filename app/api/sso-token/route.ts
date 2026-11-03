@@ -7,8 +7,9 @@ import { NextRequest, NextResponse } from 'next/server';
  * never shares a JWT secret between services — it only holds the SSO secret
  * that authorises it to *ask* for a token.
  *
- *   Faculty -> SGS_BACKEND_URL + /api/v1/auth/sso-token
- *   Parent  -> SGS_PARENT_SSO_URL
+ *   Faculty      -> SGS_BACKEND_URL + /api/v1/auth/sso-token
+ *   Parent       -> SGS_PARENT_SSO_URL
+ *   School Admin -> SGS_ADMIN_SSO_URL
  *
  * If a role's endpoint is not configured, respond with no token rather than
  * an error: the dashboard page then redirects without one.
@@ -20,6 +21,16 @@ function resolveTarget(role: string | undefined): SsoTarget {
   switch (role) {
     case 'Parent': {
       const url = process.env.SGS_PARENT_SSO_URL;
+      return url ? { url } : null;
+    }
+    // 'School Admin' with a space — what the role selector sends, and what the
+    // dashboard map is keyed on. Without this case the role fell through to
+    // `default` and was sent to the *faculty* backend, which looks up a
+    // teacher: an admin who is not also a teacher got a 404, the portal
+    // redirected with no token, and the admin app bounced them straight back
+    // here. That loop is what made admin unreachable.
+    case 'School Admin': {
+      const url = process.env.SGS_ADMIN_SSO_URL;
       return url ? { url } : null;
     }
     // Faculty, and any caller predating the `role` field.
