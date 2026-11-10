@@ -37,9 +37,32 @@ export default function DashboardPage() {
     const userRole = sessionStorage.getItem('userRole');
     const dashboardUrl = sessionStorage.getItem('dashboardRedirectUrl');
 
-
     if (!userRole) {
       router.push('/');
+      return;
+    }
+
+    // The address typed on the login page has to be the account signed in
+    // with. It was previously only a pre-check and was then discarded, so
+    // someone could type one address, pick a different Google account at the
+    // chooser, and land on that second account's dashboard — correct in the
+    // sense that they had authenticated, but not what they asked for. Anyone
+    // with two registered addresses then has no idea whose data is on screen.
+    //
+    // This is a usability guard, not a security one: the server still decides
+    // who you are from the session and whether you hold the role. Editing it
+    // in the browser gains nothing beyond skipping this message.
+    const typedEmail = sessionStorage.getItem('userEmail');
+    const signedInEmail = session?.user?.email;
+    if (
+      typedEmail &&
+      signedInEmail &&
+      typedEmail.trim().toLowerCase() !== signedInEmail.trim().toLowerCase()
+    ) {
+      setError(
+        `You signed in as ${signedInEmail} but entered ${typedEmail}. ` +
+        `Please sign in with the account you entered.`
+      );
       return;
     }
 
