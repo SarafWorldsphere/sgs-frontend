@@ -36,6 +36,16 @@ function resolveTarget(role: string | undefined): SsoTarget {
       const url = process.env.SGS_ADMIN_SSO_URL;
       return url ? { url } : null;
     }
+    // Named, not left to `default`. Every role reaches this function now, and
+    // the default sends the caller to the *faculty* backend — which looks up a
+    // teacher. A headmaster who is not also a teacher got a pointless 404, and
+    // one who is would have been handed a faculty token for a different
+    // dashboard. Returning null is the honest answer: the role is fine, there
+    // is simply no token endpoint for it yet.
+    case 'Headmaster':
+    case 'Student':
+      return null;
+
     // Faculty, and any caller predating the `role` field.
     default: {
       const base = process.env.SGS_BACKEND_URL;

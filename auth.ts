@@ -19,8 +19,16 @@ function isSafeIdentifier(identifier: string): boolean {
 }
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
+  // Eight hours, not the thirty-day default. This is a school office session,
+  // often on a shared machine; a month-long cookie means whoever sits down
+  // next is still signed in as the last person.
+  session: { maxAge: 8 * 60 * 60 },
   providers: [
-    Google({}),
+    // prompt=select_account makes Google ask which account every time. Without
+    // it Google silently reuses whatever session the browser already has, so
+    // the second person at a shared computer is signed in as the first and is
+    // never given the chance to choose.
+    Google({ authorization: { params: { prompt: "select_account" } } }),
     Credentials({
       id: "phone-otp",
       name: "Phone OTP",
