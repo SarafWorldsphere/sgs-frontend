@@ -63,14 +63,37 @@ async function holdsRole(role: string, email: string | null, phone: string | nul
   if (!isSafeIdentifier(mapping.table)) return false;
   if (!isSafeIdentifier(mapping.emailColumn) || !isSafeIdentifier(mapping.phoneColumn)) return false;
 
-  const column = email ? mapping.emailColumn : mapping.phoneColumn;
-  const value = email ?? phone;
-  if (!value) return false;
+  if (email) {
+    return withClient(async (client) => {
+      const result = await client.query(
+        `SELECT 1 FROM ${mapping.table} WHERE LOWER(${mapping.emailColumn}::text) = $1 LIMIT 1`,
+        [email]
+      );
+      return result.rows.length > 0;
+    });
+  }
+
+  if (!phone) return false;
+
+  // Phone numbers are not stored consistently — some rows carry +91, some do
+  // not, some have spaces. Matching them literally would refuse a user whose
+  // row happens to be written the other way, which is a lockout rather than a
+  // refusal. This mirrors what auth.ts already does to find the same person.
+  const cleaned = phone.replace(/[\s\-()\.]/g, "");
+  if (!cleaned) return false;
+  const candidates = [cleaned];
+  if (cleaned.length === 10) candidates.push(`+91${cleaned}`);
+  if (cleaned.startsWith("91") && cleaned.length === 12) candidates.push(cleaned.slice(2));
+  const values = Array.from(new Set(candidates));
 
   return withClient(async (client) => {
+    const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
     const result = await client.query(
-      `SELECT 1 FROM ${mapping.table} WHERE LOWER(${column}::text) = $1 LIMIT 1`,
-      [value.toLowerCase()]
+      `SELECT 1 FROM ${mapping.table}
+        WHERE REGEXP_REPLACE(COALESCE(${mapping.phoneColumn}::text, ''), '[^0-9+]', '', 'g')
+              IN (${placeholders})
+        LIMIT 1`,
+      values
     );
     return result.rows.length > 0;
   });
