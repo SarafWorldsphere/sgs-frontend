@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { withClient } from '@/lib/db';
+import { getRoleMapping } from '@/lib/role-mapping';
 
 /**
  * Exchanges a Google-verified email OR OTP-verified phone for a signed dashboard token.
@@ -41,13 +44,84 @@ function resolveTarget(role: string | undefined): SsoTarget {
   }
 }
 
+/** Only ever interpolated from the fixed table in lib/role-mapping. */
+function isSafeIdentifier(identifier: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier);
+}
+
+/**
+ * Does this identity actually hold this role?
+ *
+ * The role arrives from the browser, where it was kept in sessionStorage, so it
+ * is a request and not a fact. Without this check someone could sign in as
+ * themselves, set the role to School Admin in devtools, and have an admin token
+ * minted for them.
+ *
+ * withClient binds the tenant, so this only ever sees the current school's
+ * rows — a teacher at one school does not pass the check on another's host.
+ */
+async function holdsRole(role: string, email: string | null, phone: string | null): Promise<boolean> {
+  const mapping = getRoleMapping(role);
+  if (!mapping) return false;
+  if (!isSafeIdentifier(mapping.table)) return false;
+  if (!isSafeIdentifier(mapping.emailColumn) || !isSafeIdentifier(mapping.phoneColumn)) return false;
+
+  if (email) {
+    return withClient(async (client) => {
+      const result = await client.query(
+        `SELECT 1 FROM ${mapping.table} WHERE LOWER(${mapping.emailColumn}::text) = $1 LIMIT 1`,
+        [email]
+      );
+      return result.rows.length > 0;
+    });
+  }
+
+  if (!phone) return false;
+
+  // Phone numbers are not stored consistently — some rows carry +91, some do
+  // not, some have spaces. Matching them literally would refuse a user whose
+  // row happens to be written the other way, which is a lockout rather than a
+  // refusal. This mirrors what auth.ts already does to find the same person.
+  const cleaned = phone.replace(/[\s\-()\.]/g, "");
+  if (!cleaned) return false;
+  const candidates = [cleaned];
+  if (cleaned.length === 10) candidates.push(`+91${cleaned}`);
+  if (cleaned.startsWith("91") && cleaned.length === 12) candidates.push(cleaned.slice(2));
+  const values = Array.from(new Set(candidates));
+
+  return withClient(async (client) => {
+    const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
+    const result = await client.query(
+      `SELECT 1 FROM ${mapping.table}
+        WHERE REGEXP_REPLACE(COALESCE(${mapping.phoneColumn}::text, ''), '[^0-9+]', '', 'g')
+              IN (${placeholders})
+        LIMIT 1`,
+      values
+    );
+    return result.rows.length > 0;
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { email, phone, role } = await req.json();
+    const { role } = await req.json();
 
-    // Ensure AT LEAST ONE identifier is provided
+    // The identity comes from the signed session, never from the request body.
+    // The page used to send whichever email it had to hand; anything the
+    // browser can set, the browser can change, so a token could be requested
+    // for an address the caller had not authenticated as.
+    const session = await auth();
+    const sessionUser = session?.user as { email?: string | null; phone?: string } | undefined;
+
+    const email = typeof sessionUser?.email === 'string' ? sessionUser.email.toLowerCase() : null;
+    const phone = typeof sessionUser?.phone === 'string' ? sessionUser.phone : null;
+
     if (!email && !phone) {
-      return NextResponse.json({ error: 'Email or Phone is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+    }
+
+    if (!(await holdsRole(role, email, phone))) {
+      return NextResponse.json({ error: 'Not authorised for this role' }, { status: 403 });
     }
 
     const target = resolveTarget(role);

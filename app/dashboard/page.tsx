@@ -59,21 +59,32 @@ export default function DashboardPage() {
     // unexpected ?token= on a dashboard that ignores it is harmless, but
     // there is no point minting one.
     if (SSO_ROLES.has(userRole) && userEmail) {
+      // The email is no longer sent: the endpoint reads it from the signed
+      // session. Only the requested role goes up, and it verifies that the
+      // signed-in identity actually holds it.
       fetch('/api/sso-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: userEmail, role: userRole }),
+        body: JSON.stringify({ role: userRole }),
       })
         .then(res => res.json())
         .then(data => {
           if (data.access_token) {
             window.location.href = `${targetUrl}?token=${encodeURIComponent(data.access_token)}`;
-          } else {
-            window.location.href = targetUrl;
+            return;
           }
+          // No token means the server declined — wrong role for this account,
+          // or no account at all. Previously this fell through and redirected
+          // anyway, which left the dashboard to defend itself. Stop here.
+          setError(
+            'Your account is not authorised for the selected role. ' +
+            'Please choose the correct role, or contact your administrator.'
+          );
+          setIsRedirecting(false);
         })
         .catch(() => {
-          window.location.href = targetUrl;
+          setError('Could not complete sign-in. Please try again.');
+          setIsRedirecting(false);
         });
     } else {
       window.location.href = targetUrl;
