@@ -31,7 +31,13 @@ export async function POST(request: NextRequest) {
     // Wrap the entire validation and tracking process in ONE connection block
     return await withClient(async (client) => {
       // 1. Validation Query
-      const query = `SELECT * FROM ${table} WHERE ${emailColumn} = $1`;
+      //
+      // SELECT 1, not SELECT *. This endpoint takes no authentication — anyone
+      // who can reach the login page can POST an address to it — so the answer
+      // has to be a yes or a no and nothing else. It previously selected the
+      // whole row and returned it to the browser, which handed every column of
+      // a matching record to anyone who guessed an email address.
+      const query = `SELECT 1 FROM ${table} WHERE ${emailColumn} = $1 LIMIT 1`;
       const result = await client.query(query, [emailLower]);
 
       if (result.rows.length === 0) {
@@ -40,8 +46,6 @@ export async function POST(request: NextRequest) {
           message: `No ${role} found with email: ${email}. Please contact your administrator.`
         });
       }
-
-      const user = result.rows[0];
 
       // 2. Guaranteed Tracking Transaction
       try {
@@ -61,10 +65,13 @@ export async function POST(request: NextRequest) {
       }
 
       // 3. Return Success
+      //
+      // No user record in the response. This is a pre-check on the typed
+      // address, before anyone has authenticated; the caller is entitled to
+      // know whether to let them proceed, not to read the record.
       return NextResponse.json({
         valid: true,
-        message: 'User validated successfully',
-        user: user
+        message: 'User validated successfully'
       });
     });
 
