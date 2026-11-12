@@ -95,13 +95,15 @@ export default function DashboardPage() {
         return res.json().catch(() => ({}));
       })
       .then((data: { refused?: boolean; access_token?: string }) => {
-        if (!data.refused && data.access_token) {
-          window.location.href = `${targetUrl}?token=${encodeURIComponent(data.access_token)}`;
+        // Headmaster must never enter dashboard without JWT.
+        if (userRole === "Headmaster" && !data.access_token) {
+          setError("Unable to generate Headmaster access token. Please login again.");
           return;
         }
-        if (!data.refused) {
-          // Authorised, but this dashboard does not take a token yet.
-          window.location.href = targetUrl;
+
+        if (!data.refused && data.access_token) {
+          window.location.href =
+            `${targetUrl}?token=${encodeURIComponent(data.access_token)}`;
           return;
         }
         // isRedirecting deliberately stays true. It is a dependency of this
