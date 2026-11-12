@@ -13,7 +13,7 @@ export function getPool(): Pool {
     pool = new Pool({
       host: process.env.PGHOST || 'swais-db-test-env.cri2kcc26kxg.ap-south-2.rds.amazonaws.com',
       user: dbUser || 'swais_app_user',
-      password: process.env.PGPASSWORD || 'Swaisuser007',
+      password: process.env.PGPASSWORD!,
       database: process.env.PGDATABASE || 'sgs_prod',
       port: parseInt(process.env.PGPORT || '5432'),
       // RDS requires SSL in every environment. Gating this on NODE_ENV broke
@@ -21,7 +21,7 @@ export function getPool(): Pool {
       // so the pool connected in plaintext and RDS refused it with
       // "no pg_hba.conf entry ... no encryption". The other two pools
       // (user-role-check.ts, student-access.ts) already connect unconditionally.
-      ssl: process.env.PGHOST === 'localhost' ? false : { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: false },
       max: 20, // Maximum connections in the pool
       idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
       connectionTimeoutMillis: 5000, // Timeout increased to 5 seconds for remote RDS

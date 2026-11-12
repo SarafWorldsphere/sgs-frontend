@@ -231,11 +231,6 @@ export default function Home() {
       // EMAIL LOGIN: Trigger Google SSO
       sessionStorage.setItem('userEmail', email.trim());
       sessionStorage.removeItem('userPhone');
-      
-      if (process.env.NODE_ENV === 'development') {
-        window.location.href = dashboardUrl;
-        return;
-      }
 
       await signIn('google', {
         callbackUrl: '/dashboard',
@@ -255,24 +250,44 @@ export default function Home() {
           body: JSON.stringify({ phone: phone.trim(), role: selectedRole })
         });
         
+        
         if (tokenRes.ok) {
           const data = await tokenRes.json();
-          // Safely append access_token if it exists, otherwise fall back to base URL
+
           if (data.access_token) {
-            window.location.href = `${dashboardUrl}?token=${data.access_token}`;
+            window.location.href =
+              `${dashboardUrl}?token=${encodeURIComponent(data.access_token)}`;
+          } else if (selectedRole === "Headmaster") {
+            setMessage("Unable to generate Headmaster access token. Please try again.");
+            setIsLoading(false);
+            return;
           } else {
-            // Use native NextAuth router fallback for clean session state
+            // Preserve existing fallback for other roles.
             await signIn(undefined, { callbackUrl: dashboardUrl, redirect: true });
           }
         } else {
-          // Fallback if the token generation fails
+          if (selectedRole === "Headmaster") {
+            setMessage("Headmaster login failed. Please try again.");
+            setIsLoading(false);
+            return;
+          }
+
+          // Preserve existing fallback for other roles.
           console.warn("SSO token generation failed. Redirecting without token.");
           await signIn(undefined, { callbackUrl: dashboardUrl, redirect: true });
         }
       } catch (error) {
         console.error("Error generating SSO token:", error);
+
+        if (selectedRole === "Headmaster") {
+          setMessage("Unable to complete Headmaster login. Please try again.");
+          setIsLoading(false);
+          return;
+        }
+
         await signIn(undefined, { callbackUrl: dashboardUrl, redirect: true });
       }
+
     }
   };
   

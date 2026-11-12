@@ -42,7 +42,10 @@ function resolveTarget(role: string | undefined): SsoTarget {
     // one who is would have been handed a faculty token for a different
     // dashboard. Returning null is the honest answer: the role is fine, there
     // is simply no token endpoint for it yet.
-    case 'Headmaster':
+    case 'Headmaster': {
+      const url = process.env.SGS_HEADMASTER_SSO_URL;
+      return url ? { url } : null;
+    }
     case 'Student':
       return null;
 
