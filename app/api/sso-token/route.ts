@@ -38,13 +38,20 @@ function resolveTarget(role: string | undefined): SsoTarget {
       const url = process.env.SGS_ADMIN_SSO_URL;
       return url ? { url } : null;
     }
+    // Headmaster now has a backend of its own, so it gets a case of its own
+    // for the same reason School Admin does. Until SGS_HEADMASTER_SSO_URL is
+    // set this still returns null, which is the behaviour it had when it
+    // shared the clause below — the role is genuine, this deployment simply
+    // has no endpoint for it yet.
+    case 'Headmaster': {
+      const url = process.env.SGS_HEADMASTER_SSO_URL;
+      return url ? { url } : null;
+    }
     // Named rather than left to `default`. Every role reaches this function
     // now, and the default sends the caller to the *faculty* backend, which
-    // looks up a teacher. A headmaster who is not also a teacher would get a
-    // pointless 404, and one who is would be handed a faculty token for a
-    // different dashboard. Returning null is the honest answer: the role is
-    // genuine, there is simply no token endpoint for it yet.
-    case 'Headmaster':
+    // looks up a teacher. A student would get a pointless 404, and one who is
+    // somehow also a teacher would be handed a faculty token for a different
+    // dashboard. Returning null is the honest answer.
     case 'Student':
       return null;
 
