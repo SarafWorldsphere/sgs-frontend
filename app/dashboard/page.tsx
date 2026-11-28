@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { InsideSurface } from '../layouts';
+import { STUDENT_ACCESS_DENIED } from '@/lib/student-identifiers';
 
 // Disable all forms of prerendering for this page
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,7 @@ const ROLE_DASHBOARD_MAP: Record<string, string> = {
 };
 
 // There is no longer a list of roles that get a token. Keeping one here meant
-// every role missing from it skipped the check entirely — School Admin,
+// every role missing from it skipped the check entirely â€” School Admin,
 // Headmaster and Student were sent straight to their dashboards with nothing
 // verified at all. The server decides now: it verifies the role for everyone,
 // and returns a token only where one is configured.
@@ -46,7 +47,7 @@ export default function DashboardPage() {
     // The address typed on the login page has to be the account signed in
     // with. It was previously only a pre-check and was then discarded, so
     // someone could type one address, pick a different Google account at the
-    // chooser, and land on that second account's dashboard — correct in the
+    // chooser, and land on that second account's dashboard â€” correct in the
     // sense that they had authenticated, but not what they asked for. Anyone
     // with two registered addresses then has no idea whose data is on screen.
     //
@@ -83,11 +84,11 @@ export default function DashboardPage() {
     // login page and be sent to that dashboard unchecked. The second only
     // makes sense where the dashboard verifies it.
     //
-    // No email is sent — the server reads the identity from the signed session.
+    // No email is sent â€” the server reads the identity from the signed session.
     //
     // A 403 means the signed-in account does not hold this role. A 200 with no
     // token means the role is genuine but its dashboard has not adopted the
-    // token yet — so redirect, as before, rather than locking those users out.
+    // token yet â€” so redirect, as before, rather than locking those users out.
     fetch('/api/sso-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -109,11 +110,11 @@ export default function DashboardPage() {
         }
         // isRedirecting deliberately stays true. It is a dependency of this
         // effect, so clearing it re-runs the effect, which asks again, is
-        // refused again, and clears it again — an endless retry against
+        // refused again, and clears it again â€” an endless retry against
         // /api/sso-token for as long as the page is open. Leaving it set
         // makes the guard at the top stop the second pass.
         setError(
-          'Your account is not authorised for the selected role. ' +
+          userRole === 'Student' ? STUDENT_ACCESS_DENIED : 'Your account is not authorised for the selected role. ' +
           'Please choose the correct role, or contact your administrator.'
         );
       })

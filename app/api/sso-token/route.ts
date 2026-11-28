@@ -4,12 +4,13 @@ import { request as httpsRequest } from 'node:https';
 import { auth } from '@/auth';
 import { withClient } from '@/lib/db';
 import { getRoleMapping } from '@/lib/role-mapping';
+import { studentAccessSql } from '@/lib/student-identifiers';
 
 /**
  * Exchanges a Google-verified email OR OTP-verified phone for a signed dashboard token.
  *
  * Each dashboard backend mints and verifies its own tokens, so the login app
- * never shares a JWT secret between services — it only holds the SSO secret
+ * never shares a JWT secret between services â€” it only holds the SSO secret
  * that authorises it to *ask* for a token.
  *
  *   Faculty      -> SGS_BACKEND_URL + /api/v1/auth/sso-token
@@ -28,7 +29,7 @@ function resolveTarget(role: string | undefined): SsoTarget {
       const url = process.env.SGS_PARENT_SSO_URL;
       return url ? { url } : null;
     }
-    // The role string is 'School Admin' with a space — that is what the login
+    // The role string is 'School Admin' with a space â€” that is what the login
     // page's role selector sends, and the dashboard map is keyed the same way.
     // Before this existed the role fell through to `default` and was sent to
     // the *faculty* backend, which looks up a teacher: a school admin who is
@@ -41,7 +42,7 @@ function resolveTarget(role: string | undefined): SsoTarget {
     // Headmaster now has a backend of its own, so it gets a case of its own
     // for the same reason School Admin does. Until SGS_HEADMASTER_SSO_URL is
     // set this still returns null, which is the behaviour it had when it
-    // shared the clause below — the role is genuine, this deployment simply
+    // shared the clause below â€” the role is genuine, this deployment simply
     // has no endpoint for it yet.
     case 'Headmaster': {
       const url = process.env.SGS_HEADMASTER_SSO_URL;
@@ -70,7 +71,7 @@ function resolveTarget(role: string | undefined): SsoTarget {
  * is called with and discards any Host header handed to it, so forwarding the
  * school's host through fetch silently did nothing: the backend kept seeing
  * `Host: 127.0.0.1:4106`, resolved no school, and answered 404 for every
- * sign-in — which meant no teacher ever received a token at all. node:http
+ * sign-in â€” which meant no teacher ever received a token at all. node:http
  * sends the header as written.
  */
 function postJson(
@@ -129,7 +130,7 @@ async function holdsRole(role: string, email: string | null, phone: string | nul
   if (email) {
     return withClient(async (client) => {
       const result = await client.query(
-        `SELECT 1 FROM ${mapping.table} WHERE LOWER(${mapping.emailColumn}::text) = $1 LIMIT 1`,
+        `SELECT 1 FROM ${mapping.table} WHERE LOWER(${mapping.emailColumn}::text) = $1${studentAccessSql(role)} LIMIT 1`,
         [email]
       );
       return result.rows.length > 0;
@@ -138,7 +139,7 @@ async function holdsRole(role: string, email: string | null, phone: string | nul
 
   if (!phone) return false;
 
-  // Phone numbers are not stored consistently — some rows carry +91, some do
+  // Phone numbers are not stored consistently â€” some rows carry +91, some do
   // not, some have spaces. Matching them literally would refuse a user whose
   // row happens to be written the other way, which is a lockout rather than a
   // refusal. This mirrors what auth.ts already does to find the same person.
@@ -155,6 +156,7 @@ async function holdsRole(role: string, email: string | null, phone: string | nul
       `SELECT 1 FROM ${mapping.table}
         WHERE REGEXP_REPLACE(COALESCE(${mapping.phoneColumn}::text, ''), '[^0-9+]', '', 'g')
               IN (${placeholders})
+        ${studentAccessSql(role)}
         LIMIT 1`,
       values
     );
@@ -198,7 +200,7 @@ export async function POST(req: NextRequest) {
     // The backend decides which school a request belongs to from its Host
     // header. These URLs come from the environment and point at a port on
     // localhost, so without this the backend sees `Host: 127.0.0.1:4106`,
-    // resolves no school, and answers 404 — the same for every school.
+    // resolves no school, and answers 404 â€” the same for every school.
     //
     // Forwarding the host the browser used is what makes one deployment work
     // for several schools. An environment variable cannot do it: it holds one

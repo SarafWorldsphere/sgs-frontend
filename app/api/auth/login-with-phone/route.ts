@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withClient } from '@/lib/db';
 import { getRoleMapping, getDashboardUrl } from '@/lib/role-mapping';
+import { studentAccessSql, STUDENT_ACCESS_DENIED } from '@/lib/student-identifiers';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/[\s\-\(\)\.]/g, '');
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
       SELECT *
       FROM ${table}
       WHERE REGEXP_REPLACE(COALESCE(${phoneColumn}::text, ''), '[^0-9+]', '', 'g') IN (${placeholders})
+      ${studentAccessSql(role)}
       LIMIT 1
     `;
 
@@ -78,7 +80,7 @@ export async function POST(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({
         success: false,
-        message: `No ${role} found with this phone number.`
+        message: role === 'Student' ? STUDENT_ACCESS_DENIED : `No ${role} found with this phone number.`
       });
     }
 

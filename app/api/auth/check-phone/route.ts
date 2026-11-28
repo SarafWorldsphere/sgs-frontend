@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withClient } from '@/lib/db';
 import { getRoleMapping } from '@/lib/role-mapping';
+import { studentAccessSql, STUDENT_ACCESS_DENIED } from '@/lib/student-identifiers';
 import { sendOtpSms } from '@/lib/nimbus-sms'; 
 
 // Normalize phone number
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
       SELECT *
       FROM ${table}
       WHERE REGEXP_REPLACE(COALESCE(${phoneColumn}::text, ''), '[^0-9+]', '', 'g') IN (${placeholders})
+      ${studentAccessSql(role)}
       LIMIT 1
     `;
 
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({
         valid: false,
-        message: `No ${role} found with this phone number. Please contact your administrator.`
+        message: role === 'Student' ? STUDENT_ACCESS_DENIED : `No ${role} found with this phone number. Please contact your administrator.`
       });
     }
 
@@ -112,7 +114,7 @@ export async function POST(request: NextRequest) {
       // rights to create tables, and a table created at runtime would have no
       // tenant_id and so sit outside row-level security entirely.
       //
-      // tenant_id is left out of the insert on purpose — the stamp_tenant
+      // tenant_id is left out of the insert on purpose â€” the stamp_tenant
       // trigger fills it from the school bound to this request. The unique key
       // is (tenant_id, phone, role), not phone alone, because the same phone
       // number can belong to a person at two different schools.
@@ -128,7 +130,7 @@ export async function POST(request: NextRequest) {
     const smsResult = await sendOtpSms(phone.trim(), otp);
 
     if (!smsResult.success && process.env.NODE_ENV !== "production") {
-      // LOCAL ONLY — no SMS gateway on a laptop. Print it instead of failing.
+      // LOCAL ONLY â€” no SMS gateway on a laptop. Print it instead of failing.
       console.log(`\n  OTP for ${phone.trim()} (${role}): ${otp}\n`);
       return NextResponse.json({
         valid: true,

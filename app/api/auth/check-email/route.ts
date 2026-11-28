@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withClient } from '@/lib/db';
 import { RoleMapping, getRoleMapping } from '@/lib/role-mapping';
+import { studentAccessSql, STUDENT_ACCESS_DENIED } from '@/lib/student-identifiers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,12 +31,12 @@ export async function POST(request: NextRequest) {
     const { table, emailColumn } = mapping;
     const emailLower = email.trim().toLowerCase();
 
-    // SELECT 1, not SELECT *. This endpoint takes no authentication — anyone
-    // who can reach the login page can POST an address to it — so the answer
+    // SELECT 1, not SELECT *. This endpoint takes no authentication â€” anyone
+    // who can reach the login page can POST an address to it â€” so the answer
     // has to be a yes or a no and nothing else. It previously selected the
     // whole row and returned it to the browser, which handed every column of
     // a matching record to anyone who guessed an email address.
-    const query = `SELECT 1 FROM ${table} WHERE ${emailColumn} = $1 LIMIT 1`;
+    const query = `SELECT 1 FROM ${table} WHERE ${emailColumn} = $1${studentAccessSql(role)} LIMIT 1`;
     console.log('Query:', query, 'Email:', emailLower);
 
     // Use withClient for automatic connection management
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({
         valid: false,
-        message: `No ${role} found with email: ${email}. Please contact your administrator.`
+        message: role === 'Student' ? STUDENT_ACCESS_DENIED : `No ${role} found with email: ${email}. Please contact your administrator.`
       });
     }
 
