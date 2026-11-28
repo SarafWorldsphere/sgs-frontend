@@ -3,6 +3,7 @@ import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { withClient } from "@/lib/db";
 import { getRoleMapping } from "@/lib/role-mapping";
+import { studentAccessSql } from "@/lib/student-identifiers";
 
 function phoneLookupValues(phone: string): string[] {
   const cleaned = phone.replace(/[\s\-\(\)\.]/g, "");
@@ -71,6 +72,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             const userResult = await client.query(
               `SELECT * FROM ${mapping.table}
                WHERE REGEXP_REPLACE(COALESCE(${mapping.phoneColumn}::text, ''), '[^0-9+]', '', 'g') IN (${placeholders})
+               ${studentAccessSql(role)}
                LIMIT 1`,
               phoneValues
             );
